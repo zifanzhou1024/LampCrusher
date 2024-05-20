@@ -17,6 +17,376 @@ const RenderBuffers = Object.freeze({
   kCount:                  9,
 });
 
+export class Mesh extends Shape
+{
+  constructor( filename )
+  {
+      super("position", "normal", "texture_coord");
+      // Begin downloading the mesh. Once that completes, return
+      // control to our parse_into_mesh function.
+      this.load_file(filename);
+  }
+
+  load_file( filename )
+  {                             // Request the external file and wait for it to load.
+      // Failure mode:  Loads an empty shape.
+      return fetch(filename)
+          .then(response => {
+              if (response.ok) return Promise.resolve(response.text())
+              else return Promise.reject(response.status)
+          })
+          .then(obj_file_contents => this.parse_into_mesh(obj_file_contents))
+          .catch(error => {
+              this.copy_onto_graphics_card(this.gl);
+          })
+  }
+
+  parse_into_mesh( data )
+  {
+    var verts = [], vertNormals = [], textures = [], unpacked = {};
+
+    unpacked.verts = [];
+    unpacked.norms = [];
+    unpacked.textures = [];
+    unpacked.hashindices = {};
+    unpacked.indices = [];
+    unpacked.index = 0;
+
+    var lines = data.split( '\n' );
+
+    var VERTEX_RE = /^v\s/;
+    var NORMAL_RE = /^vn\s/;
+    var TEXTURE_RE = /^vt\s/;
+    var FACE_RE = /^f\s/;
+    var WHITESPACE_RE = /\s+/;
+
+    for ( var i = 0; i < lines.length; i++ )
+    {
+      var line = lines[i].trim();
+      var elements = line.split( WHITESPACE_RE );
+      elements.shift();
+
+           if (  VERTEX_RE.test(line) ) { verts.push.apply( verts, elements );             }
+      else if (  NORMAL_RE.test(line) ) { vertNormals.push.apply( vertNormals, elements ); }
+      else if ( TEXTURE_RE.test(line) ) { textures.push.apply( textures, elements );       }
+      else if (    FACE_RE.test(line) )
+      {
+        var quad = false;
+        for ( var j = 0, eleLen = elements.length; j < eleLen; j++ )
+        {
+          if ( j === 3 && !quad )
+          {
+            j = 2;
+            quad = true;
+          }
+          if ( elements[j] in unpacked.hashindices )
+          {
+            unpacked.indices.push(unpacked.hashindices[elements[j]]);
+          }
+          else
+          {
+            var vertex = elements[j].split('/');
+
+            unpacked.verts.push(+verts[(vertex[0] - 1) * 3 + 0]);
+            unpacked.verts.push(+verts[(vertex[0] - 1) * 3 + 1]);
+            unpacked.verts.push(+verts[(vertex[0] - 1) * 3 + 2]);
+
+            if (textures.length)
+            {
+              unpacked.textures.push(+textures[((vertex[1] - 1) || vertex[0]) * 2 + 0]);
+              unpacked.textures.push(+textures[((vertex[1] - 1) || vertex[0]) * 2 + 1]);
+            }
+
+            unpacked.norms.push(+vertNormals[((vertex[2] - 1) || vertex[0]) * 3 + 0]);
+            unpacked.norms.push(+vertNormals[((vertex[2] - 1) || vertex[0]) * 3 + 1]);
+            unpacked.norms.push(+vertNormals[((vertex[2] - 1) || vertex[0]) * 3 + 2]);
+
+            unpacked.hashindices[elements[j]] = unpacked.index;
+            unpacked.indices.push(unpacked.index);
+            unpacked.index += 1;
+          }
+          if ( j === 3 && quad )
+          { 
+            unpacked.indices.push( unpacked.hashindices[ elements[ 0 ] ] );
+          }
+        }
+      }
+    }
+    {
+      const { verts, norms, textures } = unpacked;
+      for ( var j = 0; j < verts.length / 3; j++ )
+      {
+        this.arrays.position.push(      vec3( verts[ 3 * j ],   verts[ 3 * j + 1 ], verts[ 3 * j + 2 ] ) );
+        this.arrays.normal.push(        vec3( norms[ 3 * j ],   norms[ 3 * j + 1 ], norms[ 3 * j + 2 ] ) );
+        this.arrays.texture_coord.push( vec( textures[ 2 * j ], textures[ 2 * j + 1 ] ) );
+      }
+      this.indices = unpacked.indices;
+    }
+    this.normalize_positions( false );
+    this.ready = true;
+  }
+
+  draw( context, program_state, model_transform, material )
+  {
+    if ( !this.ready )
+      return;
+
+    super.draw( context, program_state, model_transform, material );
+  }
+}
+
+
+export class Ground extends Shape
+{
+  constructor() {
+    super("position", "normal", "texture_coord");
+    // Specify the 4 square corner locations, and match those up with normal vectors:
+    this.arrays.position = Vector3.cast([-100, 0, -100], [100, 0, -100], [-100, 0, 100], [100, 0, 100]);
+    this.arrays.normal = Vector3.cast([0, 1, 0], [0, 1, 0], [0, 1, 0], [0, 1, 0]);
+    // Arrange the vertices into a square shape in texture space too:
+    this.arrays.texture_coord = Vector.cast([0, 0], [1, 0], [0, 1], [1, 1]);
+    // Use two triangles this time, indexing into four distinct vertices:
+    this.indices.push(0, 1, 2, 1, 3, 2);
+  }
+}
+
+export class PBRMaterial extends Shader
+{
+  constructor()
+  {
+    super();
+  }
+
+  vertex_glsl_code()
+  {
+    return `
+        precision highp float;
+        varying vec3 f_Normal;
+        varying vec2 f_UV;
+
+        attribute vec3 position;
+        attribute vec3 normal;
+        attribute vec2 texture_coord;
+
+        uniform mat4 g_Model;
+        uniform mat4 g_ViewProj;
+        uniform vec3 g_SquaredScale;
+        
+        void main()
+        {                                                                   
+          vec4 world_pos = g_Model    * vec4( position, 1.0 );
+          vec4 ndc_pos   = g_ViewProj * world_pos;
+
+          // vec4 curr_pos  = ndc_pos;
+          // vec4 prev_pos  = prev_view_proj * prev_world_pos;
+
+          f_Normal           = normalize( mat3( g_Model ) * normal / g_SquaredScale );
+          f_UV               = texture_coord;
+
+          gl_Position        = ndc_pos;
+        } `;
+  }
+
+  fragment_glsl_code()
+  {
+    return `
+      #extension GL_EXT_draw_buffers : require
+      precision highp float;
+
+      varying vec3  f_Normal;
+      varying vec2  f_UV;
+
+      uniform vec3  g_Diffuse;
+      uniform float g_Roughness;
+      uniform float g_Metallic;
+
+      void main()
+      {                                                           
+        // TODO(bshihabi): We'll add texture mapping soon.
+        vec3  diffuse   = g_Diffuse;
+        vec3  normal    = normalize( f_Normal );
+        float roughness = g_Roughness;
+        float metallic  = g_Metallic;
+
+        vec3  velocity  = vec3( 0.0, 0.0, 0.0 );
+
+        gl_FragData[ 0 ] = vec4( diffuse,  metallic );
+        gl_FragData[ 1 ] = vec4( f_Normal, roughness );
+        gl_FragData[ 2 ] = vec4( velocity, 1.0 );
+      } `;
+  }
+
+  send_material( gl, gpu, material )
+  {
+    // gl.uniform1f(gpu.smoothness, material.smoothness);
+    gl.uniform3fv( gpu.g_Diffuse,   material.diffuse.to3() );
+    gl.uniform1f(  gpu.g_Roughness, material.roughness );
+    gl.uniform1f(  gpu.g_Metallic,  material.metallic );
+  }
+
+  send_gpu_state( gl, gpu, gpu_state, model_transform )
+  {
+    // Use the squared scale trick from "Eric's blog" instead of inverse transpose matrix:
+    const squared_scale = model_transform.reduce(
+        ( acc, r ) =>
+        {
+            return acc.plus( vec4( ...r ).times_pairwise( r ) )
+        }, vec4( 0, 0, 0, 0 )).to3();
+    gl.uniform3fv( gpu.g_SquaredScale, squared_scale );
+
+    const view_proj = gpu_state.projection_transform.times(gpu_state.camera_inverse);
+    gl.uniformMatrix4fv( gpu.g_Model, false, Matrix.flatten_2D_to_1D( model_transform.transposed() ) );
+    gl.uniformMatrix4fv( gpu.g_ViewProj, false, Matrix.flatten_2D_to_1D( view_proj.transposed() ) );
+
+    if ( gpu_state.lights.length <= 0 )
+      return;
+
+    const directional_light_direction    = vec3( 0.0, -1.0, 0.0 );
+    const directional_light_chromaticity = vec3( 1.0, 1.0, 1.0 );
+    const directional_light_luminance    = 10.0;
+    gl.uniform3fv( gpu.g_DirectionalLightDirection,    directional_light_direction );
+    gl.uniform3fv( gpu.g_DirectionalLightChromaticity, directional_light_chromaticity );
+    gl.uniform1f ( gpu.g_DirectionalLightLuminance,    directional_light_luminance );
+    const O = vec4(0, 0, 0, 1);
+    const camera_center = gpu_state.camera_transform.times(O).to3();
+    gl.uniform3fv( gpu.g_WSCameraPosition, camera_center );
+  }
+
+  update_GPU( context, gpu_addresses, gpu_state, model_transform, material )
+  {
+    // update_GPU(): Define how to synchronize our JavaScript's variables to the GPU's.  This is where the shader
+    // recieves ALL of its inputs.  Every value the GPU wants is divided into two categories:  Values that belong
+    // to individual objects being drawn (which we call "Material") and values belonging to the whole scene or
+    // program (which we call the "Program_State").  Send both a material and a program state to the shaders
+    // within this function, one data field at a time, to fully initialize the shader for a draw.
+
+    // Fill in any missing fields in the Material object with custom defaults for this shader:
+    const defaults = { diffuse: vec3( 1, 1, 1 ), roughness: 0.2, metallic: 0.01 };
+    material = Object.assign( {}, defaults, material );
+
+    this.send_material( context, gpu_addresses, material );
+    this.send_gpu_state( context, gpu_addresses, gpu_state, model_transform );
+  }
+}
+
+export class DiffuseMaterial extends Shader
+{
+  constructor()
+  {
+    super();
+  }
+
+  vertex_glsl_code()
+  {
+    return `
+        precision highp float;
+        varying vec3 f_Normal;
+        varying vec2 f_UV;
+
+        attribute vec3 position;
+        attribute vec3 normal;
+        attribute vec2 texture_coord;
+
+        uniform mat4 g_Model;
+        uniform mat4 g_ViewProj;
+        uniform vec3 g_SquaredScale;
+        
+        void main()
+        {                                                                   
+          vec4 world_pos = g_Model    * vec4( position, 1.0 );
+          vec4 ndc_pos   = g_ViewProj * world_pos;
+
+          // vec4 curr_pos  = ndc_pos;
+          // vec4 prev_pos  = prev_view_proj * prev_world_pos;
+
+          f_Normal           = normalize( mat3( g_Model ) * normal / g_SquaredScale );
+          f_UV               = texture_coord;
+
+          gl_Position        = ndc_pos;
+        } `;
+  }
+
+  fragment_glsl_code()
+  {
+    return `
+      #extension GL_EXT_draw_buffers : require
+      precision highp float;
+
+      varying vec3  f_Normal;
+      varying vec2  f_UV;
+
+      uniform vec3  g_Diffuse;
+      uniform float g_Roughness;
+      uniform float g_Metallic;
+
+      void main()
+      {                                                           
+        // TODO(bshihabi): We'll add texture mapping soon.
+        vec3  diffuse   = g_Diffuse;
+        vec3  normal    = normalize( f_Normal );
+        float roughness = g_Roughness;
+        float metallic  = g_Metallic;
+
+        vec3  velocity  = vec3( 0.0, 0.0, 0.0 );
+
+        gl_FragData[ 0 ] = vec4( diffuse,  metallic );
+        gl_FragData[ 1 ] = vec4( f_Normal, roughness );
+        gl_FragData[ 2 ] = vec4( velocity, 1.0 );
+      } `;
+  }
+
+  send_material( gl, gpu, material )
+  {
+    // gl.uniform1f(gpu.smoothness, material.smoothness);
+    gl.uniform3fv( gpu.g_Diffuse,   material.diffuse.to3() );
+    gl.uniform1f(  gpu.g_Roughness, material.roughness );
+    gl.uniform1f(  gpu.g_Metallic,  material.metallic );
+  }
+
+  send_gpu_state( gl, gpu, gpu_state, model_transform )
+  {
+    // Use the squared scale trick from "Eric's blog" instead of inverse transpose matrix:
+    const squared_scale = model_transform.reduce(
+        ( acc, r ) =>
+        {
+            return acc.plus( vec4( ...r ).times_pairwise( r ) )
+        }, vec4( 0, 0, 0, 0 )).to3();
+    gl.uniform3fv( gpu.g_SquaredScale, squared_scale );
+
+    const view_proj = gpu_state.projection_transform.times(gpu_state.camera_inverse);
+    gl.uniformMatrix4fv( gpu.g_Model, false, Matrix.flatten_2D_to_1D( model_transform.transposed() ) );
+    gl.uniformMatrix4fv( gpu.g_ViewProj, false, Matrix.flatten_2D_to_1D( view_proj.transposed() ) );
+
+    if ( gpu_state.lights.length <= 0 )
+      return;
+
+    const directional_light_direction    = vec3( 0.0, -1.0, 0.0 );
+    const directional_light_chromaticity = vec3( 1.0, 1.0, 1.0 );
+    const directional_light_luminance    = 10.0;
+    gl.uniform3fv( gpu.g_DirectionalLightDirection,    directional_light_direction );
+    gl.uniform3fv( gpu.g_DirectionalLightChromaticity, directional_light_chromaticity );
+    gl.uniform1f ( gpu.g_DirectionalLightLuminance,    directional_light_luminance );
+    const O = vec4(0, 0, 0, 1);
+    const camera_center = gpu_state.camera_transform.times(O).to3();
+    gl.uniform3fv( gpu.g_WSCameraPosition, camera_center );
+  }
+
+  update_GPU( context, gpu_addresses, gpu_state, model_transform, material )
+  {
+    // update_GPU(): Define how to synchronize our JavaScript's variables to the GPU's.  This is where the shader
+    // recieves ALL of its inputs.  Every value the GPU wants is divided into two categories:  Values that belong
+    // to individual objects being drawn (which we call "Material") and values belonging to the whole scene or
+    // program (which we call the "Program_State").  Send both a material and a program state to the shaders
+    // within this function, one data field at a time, to fully initialize the shader for a draw.
+
+    // Fill in any missing fields in the Material object with custom defaults for this shader:
+    const defaults = { diffuse: vec3( 1, 1, 1 ), roughness: 0.2, metallic: 0.01 };
+    material = Object.assign( {}, defaults, material );
+
+    this.send_material( context, gpu_addresses, material );
+    this.send_gpu_state( context, gpu_addresses, gpu_state, model_transform );
+  }
+}
 
 export class FullscreenShader extends Shader
 {
@@ -104,6 +474,7 @@ export class StandardBrdf extends Shader
       uniform float     g_DirectionalLightLuminance;
 
       uniform vec3      g_WSCameraPosition;
+      uniform vec3      g_SkyColor;
 
       varying vec2      f_UV;
       
@@ -207,7 +578,7 @@ export class StandardBrdf extends Shader
         // Get the cosine theta of the light against the normal
         float cos_theta      = max( dot( normal, light_direction ), 0.0 );
 
-        return ( ( 1.0 / kPI ) * kD * diffuse + specular ) * radiance * cos_theta;
+        return ( ( ( 1.0 / kPI ) * ( kD * diffuse ) ) + specular ) * radiance * cos_theta;
       }
 
       
@@ -241,30 +612,30 @@ export class StandardBrdf extends Shader
         vec3  diffuse   = texture2D( g_DiffuseMetallic, f_UV ).rgb;
         float metallic  = texture2D( g_DiffuseMetallic, f_UV ).a;
         
-        vec3  normal    = decode_normal( texture2D( g_NormalRoughness, f_UV ).rgba );
-        // float roughness = texture2D( g_NormalRoughness, f_UV ).a;
+        vec3  normal    = texture2D( g_NormalRoughness, f_UV ).rgb;
+        float roughness = texture2D( g_NormalRoughness, f_UV ).a;
 
         float depth     = texture2D( g_Depth,           f_UV ).r;
 
         vec3 ws_pos      = screen_to_world( f_UV, depth ).xyz;
-        vec3 view_dir    = g_WSCameraPosition.xyz - ws_pos;
+        vec3 view_dir    = normalize( g_WSCameraPosition.xyz - ws_pos ) * vec3( -1.0, -1.0, 1.0 );
 
         vec3 lambertian  = evaluate_lambertian( diffuse );
 
         vec3 directional = evaluate_directional_light(
-          vec3( 0.0, -1.0, 0.0 ),
-          vec3( 1.0, 1.0, 1.0 ),
-          20.0,
+          g_DirectionalLightDirection,
+          g_DirectionalLightChromaticity,
+          g_DirectionalLightLuminance,
           view_dir,
           normal,
           0.2,
-          0.0,
+          0.2,
           vec3( 1.0, 1.0, 1.0 )
         );
 
         vec3 irradiance = directional;
 
-        gl_FragColor    = vec4( normal, 1.0 ); // depth == 1.0 ? vec4( 0.0 ) : vec4( lambertian * irradiance, 1.0 );
+        gl_FragColor    =  depth == 1.0 ? vec4( g_SkyColor, 1.0 ) : vec4( lambertian * irradiance, 1.0 );
       } `;
   }
 
@@ -291,13 +662,14 @@ export class StandardBrdf extends Shader
 
     const directional_light_direction    = vec3( 0.0, -1.0, 0.0 );
     const directional_light_chromaticity = vec3( 1.0, 1.0, 1.0 );
-    const directional_light_luminance    = 10.0;
+    const directional_light_luminance    = 15.0;
     gl.uniform3fv( gpu_addresses.g_DirectionalLightDirection,    directional_light_direction );
     gl.uniform3fv( gpu_addresses.g_DirectionalLightChromaticity, directional_light_chromaticity );
     gl.uniform1f ( gpu_addresses.g_DirectionalLightLuminance,    directional_light_luminance );
     const O = vec4(0, 0, 0, 1);
     const camera_center = gpu_state.camera_transform.times(O).to3();
     gl.uniform3fv( gpu_addresses.g_WSCameraPosition, camera_center );
+    gl.uniform3fv( gpu_addresses.g_SkyColor, vec3( 0.7578125, 0.81640625, 0.953125 ) );
   }
 }
 
@@ -355,13 +727,11 @@ export class Renderer
   constructor( gl )
   {
     this.gl = gl;
-    /*
     const draw_buffers_ext = gl.getExtension( "WEBGL_draw_buffers" );
     if ( !draw_buffers_ext )
     {
       alert( "Need WEBGL_draw_buffers extension!" );
     }
-    */
 
     const depth_texture_ext = gl.getExtension( "WEBGL_depth_texture" );
     if ( !depth_texture_ext )
@@ -369,8 +739,20 @@ export class Renderer
       alert( "Need WEBGL_depth_texture extension!" );
     }
 
+    const float_texture_ext = gl.getExtension( "OES_texture_float" );
+    if ( !float_texture_ext )
+    {
+      alert( "Need OES_texture_float extension!" );
+    }
+
+    const float_bilinear_ext = gl.getExtension( "OES_texture_float_linear" );
+    if ( !float_bilinear_ext )
+    {
+      alert( "Need OES_texture_float_linear extension!" );
+    }
+
     this.render_buffers = new Array( RenderBuffers.kCount );
-    // this.init_gbuffer( draw_buffers_ext );
+    this.init_gbuffer( draw_buffers_ext );
     this.init_shadow_maps();
     this.init_pbr_buffer();
     this.init_post_processing_buffer();
@@ -386,7 +768,6 @@ export class Renderer
     this.blit            = new Material( new FullscreenShader(), { texture:    this.render_buffers[ RenderBuffers.kPostProcessing ] } );
   }
 
-/*
   init_gbuffer( draw_buffers_ext )
   {
     const gl = this.gl;
@@ -399,21 +780,21 @@ export class Renderer
     this.render_buffers[ RenderBuffers.kGBufferDepth           ] = gl.createTexture();
 
     gl.bindTexture( gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kGBufferDiffuseMetallic ] );
-    gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGBA, gl.canvas.width, gl.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null );
+    gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGBA, gl.canvas.width, gl.canvas.height, 0, gl.RGBA, gl.FLOAT, null );
     gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR );
     gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR );
     gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE );
     gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE );
 
     gl.bindTexture( gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kGBufferNormalRoughness ] );
-    gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGBA, gl.canvas.width, gl.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null );
+    gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGBA, gl.canvas.width, gl.canvas.height, 0, gl.RGBA, gl.FLOAT, null );
     gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR );
     gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR );
     gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE );
     gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE );
 
     gl.bindTexture( gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kGBufferVelocity ] );
-    gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGBA,  gl.canvas.width, gl.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null );
+    gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGBA,  gl.canvas.width, gl.canvas.height, 0, gl.RGBA, gl.FLOAT, null );
     gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR );
     gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR );
     gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE );
@@ -449,7 +830,6 @@ export class Renderer
     gl.bindTexture( gl.TEXTURE_2D, null );
     gl.bindFramebuffer( gl.FRAMEBUFFER, null );
   }
-  */
 
   init_pbr_buffer( half_float_ext )
   {
@@ -458,17 +838,9 @@ export class Renderer
     this.pbr_buffer = gl.createFramebuffer();
     
     this.render_buffers[ RenderBuffers.kPBRLighting  ] = gl.createTexture();
-    this.render_buffers[ RenderBuffers.kGBufferDepth ] = gl.createTexture();
 
     gl.bindTexture( gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kPBRLighting ] );
-    gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGBA, gl.canvas.width, gl.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null );
-    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR );
-    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR );
-    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE );
-    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE );
-
-    gl.bindTexture( gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kGBufferDepth ] );
-    gl.texImage2D( gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT, gl.canvas.width, gl.canvas.height, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null );
+    gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGBA, gl.canvas.width, gl.canvas.height, 0, gl.RGBA, gl.FLOAT, null );
     gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR );
     gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR );
     gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE );
@@ -476,7 +848,6 @@ export class Renderer
 
     gl.bindFramebuffer( gl.FRAMEBUFFER, this.pbr_buffer );
     gl.framebufferTexture2D( gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kPBRLighting  ], 0 );
-    gl.framebufferTexture2D( gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT,  gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kGBufferDepth ], 0 );
 
     const framebuffer_status = gl.checkFramebufferStatus( gl.FRAMEBUFFER );
     if ( framebuffer_status !== gl.FRAMEBUFFER_COMPLETE )
@@ -510,7 +881,6 @@ export class Renderer
     const framebuffer_status = gl.checkFramebufferStatus( gl.FRAMEBUFFER );
     if ( framebuffer_status !== gl.FRAMEBUFFER_COMPLETE )
     {
-      console.log( framebuffer_status == gl.FRAMEBUFFER_UNSUPPORTED ); 
       alert( "Failed to create PostProcessing Buffer!" );
     }
 
@@ -556,6 +926,7 @@ export class Renderer
     gl.clearColor( 0.0, 0.0, 0.0, 0.0 );
     gl.clear( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT );
     gl.depthFunc( gl.LESS );
+    gl.disable( gl.BLEND );
 
     for ( let iactor = 0; iactor < actors.length; iactor++ )
     {
@@ -591,22 +962,11 @@ export class Renderer
 
     gl.bindFramebuffer( gl.FRAMEBUFFER, this.pbr_buffer );
     gl.viewport( 0, 0, gl.canvas.width, gl.canvas.height );
-    gl.clearColor( 0.0, 0.0, 0.0, 0.0 );
+    gl.clearColor( 0.7578125, 0.81640625, 0.953125, 1.0 );
     gl.clear( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT );
-    gl.depthFunc( gl.LESS );
 
-    for ( let iactor = 0; iactor < actors.length; iactor++ )
-    {
-      const actor = actors[ iactor ];
-      if ( !actor.mesh || !actor.material )
-        continue;
-      actor.mesh.draw( context, program_state, actor.transform, actor.material );
-    }
-
-    /*
     gl.depthFunc( gl.ALWAYS );
     this.quad.draw( context, program_state, Mat4.identity(), this.standard_brdf );
-    */
   }
 
   render_handler_post_processing( context, program_state )
@@ -638,7 +998,7 @@ export class Renderer
   submit( context, program_state, actors )
   {
     const gl = this.gl;
-    // this.render_handler_gbuffer(         context, program_state, actors );
+    this.render_handler_gbuffer(         context, program_state, actors );
     this.render_handler_lighting(        context, program_state, actors );
     this.render_handler_post_processing( context, program_state, actors );
     this.render_handler_blit(            context, program_state, actors );
