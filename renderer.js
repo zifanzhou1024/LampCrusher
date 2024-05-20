@@ -17,6 +17,18 @@ const RenderBuffers = Object.freeze({
   kCount:                  9,
 });
 
+const kShadowMapSize = 4096;
+
+export class DirectionalLight
+{
+  constructor( direction, chromaticity, luminance )
+  {
+    this.direction    = direction;
+    this.chromaticity = chromaticity;
+    this.luminance    = luminance;
+  }
+}
+
 export class Mesh extends Shape
 {
   constructor( filename )
@@ -237,19 +249,6 @@ export class PBRMaterial extends Shader
     const view_proj = gpu_state.projection_transform.times(gpu_state.camera_inverse);
     gl.uniformMatrix4fv( gpu.g_Model, false, Matrix.flatten_2D_to_1D( model_transform.transposed() ) );
     gl.uniformMatrix4fv( gpu.g_ViewProj, false, Matrix.flatten_2D_to_1D( view_proj.transposed() ) );
-
-    if ( gpu_state.lights.length <= 0 )
-      return;
-
-    const directional_light_direction    = vec3( 0.0, -1.0, 0.0 );
-    const directional_light_chromaticity = vec3( 1.0, 1.0, 1.0 );
-    const directional_light_luminance    = 10.0;
-    gl.uniform3fv( gpu.g_DirectionalLightDirection,    directional_light_direction );
-    gl.uniform3fv( gpu.g_DirectionalLightChromaticity, directional_light_chromaticity );
-    gl.uniform1f ( gpu.g_DirectionalLightLuminance,    directional_light_luminance );
-    const O = vec4(0, 0, 0, 1);
-    const camera_center = gpu_state.camera_transform.times(O).to3();
-    gl.uniform3fv( gpu.g_WSCameraPosition, camera_center );
   }
 
   update_GPU( context, gpu_addresses, gpu_state, model_transform, material )
@@ -466,11 +465,14 @@ export class StandardBrdf extends Shader
       uniform sampler2D g_DiffuseMetallic;
       uniform sampler2D g_NormalRoughness;
       uniform sampler2D g_Depth;
+      uniform sampler2D g_ShadowMapDirectional;
 
       uniform mat4      g_InverseViewProj;
       uniform vec3      g_DirectionalLightDirection;
       uniform vec3      g_DirectionalLightChromaticity;
       uniform float     g_DirectionalLightLuminance;
+
+      uniform mat4      g_DirectionalLightViewProj;
 
       uniform vec3      g_WSCameraPosition;
       uniform vec3      g_SkyColor;
@@ -618,6 +620,19 @@ export class StandardBrdf extends Shader
 
         vec3 ws_pos      = screen_to_world( f_UV, depth ).xyz;
         vec3 view_dir    = normalize( g_WSCameraPosition.xyz - ws_pos ) * vec3( -1.0, -1.0, 1.0 );
+        vec4 dir_ls_pos  = g_DirectionalLightViewProj * vec4( ws_pos, 1.0 );
+        dir_ls_pos.xyz  /= dir_ls_pos.w;
+        float shadow = 0.0;
+        if ( dir_ls_pos.z <= 1.0 )
+        {
+          dir_ls_pos = ( dir_ls_pos + 1.0 ) / 2.0;
+          float closest_depth = texture2D( g_ShadowMapDirectional, dir_ls_pos.xy ).x;
+          float kBias         = 0.005;
+          if ( dir_ls_pos.z > closest_depth + kBias )
+          {
+            shadow = 1.0;
+          }
+        }
 
         vec3 lambertian  = evaluate_lambertian( diffuse );
 
@@ -627,12 +642,12 @@ export class StandardBrdf extends Shader
           g_DirectionalLightLuminance,
           view_dir,
           normal,
-          0.2,
-          0.2,
-          vec3( 1.0, 1.0, 1.0 )
+          roughness,
+          metallic,
+          diffuse
         );
 
-        vec3 irradiance = directional;
+        vec3 irradiance = directional * ( 1.0 - shadow );
 
         gl_FragColor    =  depth == 1.0 ? vec4( g_SkyColor, 1.0 ) : vec4( lambertian * irradiance, 1.0 );
       } `;
@@ -642,33 +657,37 @@ export class StandardBrdf extends Shader
   {
     gl.activeTexture( gl.TEXTURE0 );
     gl.bindTexture( gl.TEXTURE_2D, material.diffuse_metallic );
-    gl.uniform1i( gpu_addresses.g_DiffuseMetallic, 0 );
+    gl.uniform1i( gpu_addresses.g_DiffuseMetallic,      0 );
 
     gl.activeTexture( gl.TEXTURE1 );
     gl.bindTexture( gl.TEXTURE_2D, material.normal_roughness );
-    gl.uniform1i( gpu_addresses.g_NormalRoughness, 1 );
+    gl.uniform1i( gpu_addresses.g_NormalRoughness,      1 );
 
     gl.activeTexture( gl.TEXTURE2 );
     gl.bindTexture( gl.TEXTURE_2D, material.depth );
-    gl.uniform1i( gpu_addresses.g_Depth,           2 );
+    gl.uniform1i( gpu_addresses.g_Depth,                2 );
+
+    gl.activeTexture( gl.TEXTURE3 );
+    gl.bindTexture( gl.TEXTURE_2D, material.shadow_map_directional );
+    gl.uniform1i( gpu_addresses.g_ShadowMapDirectional, 3 );
 
     const view_proj         = gpu_state.projection_transform.times( gpu_state.camera_inverse );
     const inverse_view_proj = Mat4.inverse( view_proj );
     gl.uniformMatrix4fv( gpu_addresses.g_InverseViewProj, false, Matrix.flatten_2D_to_1D( inverse_view_proj.transposed() ) );
 
-    if ( gpu_state.lights.length <= 0 )
+    if ( !gpu_state.directional_light )
       return;
 
-    const directional_light_direction    = vec3( 0.0, -1.0, 0.0 );
-    const directional_light_chromaticity = vec3( 1.0, 1.0, 1.0 );
-    const directional_light_luminance    = 15.0;
-    gl.uniform3fv( gpu_addresses.g_DirectionalLightDirection,    directional_light_direction );
-    gl.uniform3fv( gpu_addresses.g_DirectionalLightChromaticity, directional_light_chromaticity );
-    gl.uniform1f ( gpu_addresses.g_DirectionalLightLuminance,    directional_light_luminance );
+    gl.uniform3fv( gpu_addresses.g_DirectionalLightDirection,    gpu_state.directional_light.direction );
+    gl.uniform3fv( gpu_addresses.g_DirectionalLightChromaticity, gpu_state.directional_light.chromaticity );
+    gl.uniform1f ( gpu_addresses.g_DirectionalLightLuminance,    gpu_state.directional_light.luminance );
     const O = vec4(0, 0, 0, 1);
     const camera_center = gpu_state.camera_transform.times(O).to3();
     gl.uniform3fv( gpu_addresses.g_WSCameraPosition, camera_center );
     gl.uniform3fv( gpu_addresses.g_SkyColor, vec3( 0.7578125, 0.81640625, 0.953125 ) );
+
+    const directional_view_proj = gpu_state.directional_light_proj.times( gpu_state.directional_light_view );
+    gl.uniformMatrix4fv( gpu_addresses.g_DirectionalLightViewProj, false, Matrix.flatten_2D_to_1D( directional_view_proj.transposed() ) );
   }
 }
 
@@ -705,11 +724,32 @@ export class PostProcessing extends Shader
 
       varying vec2 f_UV;
 
+      // This is technically the worse approximation but I doubt you can tell
+      // the difference.
+      // https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
+      vec3 aces_film(vec3 x)
+      {
+        float a = 2.51;
+        float b = 0.03;
+        float c = 2.43;
+        float d = 0.59;
+        float e = 0.14;
+        return clamp( ( x * ( a * x + b ) ) / ( x * ( c * x + d ) + e ), 0.0, 1.0 );
+      }
+
+      vec3 transfer_function_gamma( vec3 color )
+      {
+        return pow( color, vec3( 2.2, 2.2, 2.2 ) );
+      }
+
       void main()
       {                                                           
-        vec4  radiometry = texture2D( g_PBRBuffer, f_UV ).rgba;
+        vec3 radiometry       = texture2D( g_PBRBuffer, f_UV ).rgb;
 
-        gl_FragColor = radiometry;
+        vec3 tonemapped       = radiometry; // aces_film( radiometry );
+        vec3 gamma_compressed = radiometry; // transfer_function_gamma( tonemapped );
+
+        gl_FragColor = vec4( gamma_compressed, 1.0 );
       } `;
   }
 
@@ -719,6 +759,13 @@ export class PostProcessing extends Shader
     gl.bindTexture( gl.TEXTURE_2D, material.pbr_buffer );
     gl.uniform1i( gpu_addresses.g_PBRBuffer, 0 );
   }
+}
+
+function orthographic_proj( left, right, bottom, top, near, far )
+{
+  return Mat4.scale(1 / (right - left), 1 / (top - bottom), 1 / (far - near))
+      .times(Mat4.translation(-left - right, -top - bottom, -near - far))
+      .times(Mat4.scale(2, 2, -2));
 }
 
 export class Renderer 
@@ -759,9 +806,10 @@ export class Renderer
     this.quad = new defs.Square();
 
     this.standard_brdf   = new Material( new StandardBrdf(), {
-      diffuse_metallic: this.render_buffers[ RenderBuffers.kGBufferDiffuseMetallic ],
-      normal_roughness: this.render_buffers[ RenderBuffers.kGBufferNormalRoughness ],
-      depth:            this.render_buffers[ RenderBuffers.kGBufferDepth           ],
+      diffuse_metallic:       this.render_buffers[ RenderBuffers.kGBufferDiffuseMetallic ],
+      normal_roughness:       this.render_buffers[ RenderBuffers.kGBufferNormalRoughness ],
+      depth:                  this.render_buffers[ RenderBuffers.kGBufferDepth           ],
+      shadow_map_directional: this.render_buffers[ RenderBuffers.kShadowMapSun           ],
     } );
     this.post_processing = new Material( new PostProcessing(),   { pbr_buffer: this.render_buffers[ RenderBuffers.kPBRLighting    ] } );
     this.blit            = new Material( new FullscreenShader(), { texture:    this.render_buffers[ RenderBuffers.kPostProcessing ] } );
@@ -830,7 +878,7 @@ export class Renderer
     gl.bindFramebuffer( gl.FRAMEBUFFER, null );
   }
 
-  init_pbr_buffer( half_float_ext )
+  init_pbr_buffer()
   {
     const gl = this.gl;
 
@@ -874,7 +922,7 @@ export class Renderer
     gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE );
     gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE );
 
-    gl.bindFramebuffer( gl.FRAMEBUFFER, this.pbr_buffer );
+    gl.bindFramebuffer( gl.FRAMEBUFFER, this.post_processing_buffer );
     gl.framebufferTexture2D( gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kPostProcessing ], 0 );
 
     const framebuffer_status = gl.checkFramebufferStatus( gl.FRAMEBUFFER );
@@ -895,11 +943,12 @@ export class Renderer
     this.render_buffers[ RenderBuffers.kShadowMapSun ] = gl.createTexture();
 
     gl.bindTexture( gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kShadowMapSun ] );
-    gl.texImage2D( gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT, 2048, 2048, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null );
-    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR );
-    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR );
-    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE );
-    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE );
+    gl.texImage2D( gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT, kShadowMapSize, kShadowMapSize, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null );
+    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER,   gl.LINEAR );
+    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER,   gl.LINEAR );
+    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,       gl.CLAMP_TO_EDGE );
+    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,       gl.CLAMP_TO_EDGE );
+
 
     gl.bindFramebuffer( gl.FRAMEBUFFER, this.directional_shadow_map );
     gl.framebufferTexture2D( gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT,  gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kShadowMapSun ], 0 );
@@ -913,7 +962,6 @@ export class Renderer
 
     gl.bindTexture( gl.TEXTURE_2D, null );
     gl.bindFramebuffer( gl.FRAMEBUFFER, null );
-    
   }
 
   render_handler_gbuffer( context, program_state, actors )
@@ -942,9 +990,27 @@ export class Renderer
     const gl = this.gl;
 
     gl.bindFramebuffer( gl.FRAMEBUFFER, this.directional_shadow_map );
-    gl.viewport( 0, 0, 2048, 2048 );
+    gl.viewport( 0, 0, kShadowMapSize, kShadowMapSize );
     gl.clear( gl.DEPTH_BUFFER_BIT );
     gl.depthFunc( gl.LESS );
+
+    if ( !program_state.directional_light )
+      return;
+
+
+    const camera_center = program_state.camera_transform.times( vec3( 0, -1, 0 ) ).to3();
+    program_state.directional_light_view = Mat4.look_at(
+      program_state.directional_light.direction.normalized().times( -40 ),
+      vec3( 0, 0, 0 ),
+      vec3( 0, 1, 0 )
+    );
+    program_state.directional_light_proj = orthographic_proj( -35, 35, -35, 35, 0.1, 75 );
+
+    const orig_view = program_state.camera_inverse;
+    const orig_proj = program_state.projection_transform;
+
+    program_state.camera_inverse       = program_state.directional_light_view;
+    program_state.projection_transform = program_state.directional_light_proj;
 
     for ( let iactor = 0; iactor < actors.length; iactor++ )
     {
@@ -953,6 +1019,9 @@ export class Renderer
         continue;
       actor.mesh.draw( context, program_state, actor.transform, actor.material );
     }
+
+    program_state.camera_inverse       = orig_view;
+    program_state.projection_transform = orig_proj;
   }
 
   render_handler_lighting( context, program_state, actors )
@@ -972,13 +1041,13 @@ export class Renderer
   {
     const gl = this.gl;
 
-    gl.bindFramebuffer( gl.FRAMEBUFFER, null );
+    gl.bindFramebuffer( gl.FRAMEBUFFER, this.post_processing_buffer );
     gl.viewport( 0, 0, gl.canvas.width, gl.canvas.height );
     gl.clearColor( 0.0, 0.0, 0.0, 0.0 );
     gl.clear( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT );
     gl.depthFunc( gl.ALWAYS );
 
-    this.quad.draw( context, program_state, Mat4.identity(), this.blit );
+    this.quad.draw( context, program_state, Mat4.identity(), this.post_processing );
   }
 
   render_handler_blit( context, program_state )
@@ -997,9 +1066,10 @@ export class Renderer
   submit( context, program_state, actors )
   {
     const gl = this.gl;
-    this.render_handler_gbuffer(         context, program_state, actors );
-    this.render_handler_lighting(        context, program_state, actors );
-    this.render_handler_post_processing( context, program_state, actors );
-    this.render_handler_blit(            context, program_state, actors );
+    this.render_handler_gbuffer(            context, program_state, actors );
+    this.render_handler_directional_shadow( context, program_state, actors );
+    this.render_handler_lighting(           context, program_state, actors );
+    this.render_handler_post_processing(    context, program_state, actors );
+    this.render_handler_blit(               context, program_state, actors );
   }
 };
