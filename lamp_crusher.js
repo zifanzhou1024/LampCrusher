@@ -30,18 +30,44 @@ export class LampCrusher extends Scene
             {diffuse: hex_color("#ffffff")}),
     };
 
-    this.renderer      = null;
+    this.renderer           = null;
 
-    this.lamp          = new Actor();
-    this.lamp.mesh     = new Mesh( "./assets/lamp.obj" );
-    this.lamp.material = new Material(new PBRMaterial(), { diffuse: hex_color("#ffffff"), roughness: 0.1, metallic: 0.5 });
 
-    this.ground           = new Actor();
-    this.ground.mesh      = new Ground();
-    this.ground.material  = new Material(new PBRMaterial(), { diffuse: hex_color("#c2d1f4"), roughness: 2.0, metallic: 0.0 });
-    this.ground.transform = Mat4.translation( 0, -3, 0 );
+    this.lamp               = new Actor();
+    this.lamp.mesh          = new Mesh( "./assets/lamp.obj" );
+    this.lamp.material      = new Material(new PBRMaterial(), { diffuse: hex_color("#ffffff"), roughness: 0.1, metallic: 0.5 });
 
-    this.actors        = [ this.lamp, this.ground ];
+    this.ground             = new Actor();
+    this.ground.mesh        = new Ground();
+    this.ground.material    = new Material(new PBRMaterial(), { diffuse: hex_color("#c2d1f4"), roughness: 2.0, metallic: 0.0 });
+    this.ground.transform   = Mat4.translation( 0, -2.5, 0 );
+
+    this.letter_p           = new Actor();
+    this.letter_p.mesh      = new Mesh("./assets/pixar_p.obj");
+    this.letter_p.material  = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.0 });
+    this.letter_p.transform = Mat4.translation( -10, -1, 30 );
+
+    this.letter_i           = new Actor();
+    this.letter_i.mesh      = new Mesh("./assets/pixar_i.obj");
+    this.letter_i.material  = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.0 });
+    this.letter_i.transform = Mat4.translation( -10, -1.5, 15 ); // idk wtf happened with the import honestly
+
+    this.letter_x           = new Actor();
+    this.letter_x.mesh      = new Mesh("./assets/pixar_x.obj");
+    this.letter_x.material  = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.0 });
+    this.letter_x.transform = Mat4.translation( -10, -1, 0 );
+
+    this.letter_a           = new Actor();
+    this.letter_a.mesh      = new Mesh("./assets/pixar_a.obj");
+    this.letter_a.material  = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.0 });
+    this.letter_a.transform = Mat4.translation( -10, -1, -15 );
+
+    this.letter_r           = new Actor();
+    this.letter_r.mesh      = new Mesh("./assets/pixar_r.obj");
+    this.letter_r.material  = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.0 });
+    this.letter_r.transform = Mat4.translation( -10, -1, -30 );
+
+    this.actors        = [ this.lamp, this.ground, this.letter_p, this.letter_i, this.letter_x, this.letter_a, this.letter_r ];
   }
 
   make_control_panel()

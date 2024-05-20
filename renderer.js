@@ -337,7 +337,6 @@ export class DiffuseMaterial extends Shader
 
   send_material( gl, gpu, material )
   {
-    // gl.uniform1f(gpu.smoothness, material.smoothness);
     gl.uniform3fv( gpu.g_Diffuse,   material.diffuse.to3() );
     gl.uniform1f(  gpu.g_Roughness, material.roughness );
     gl.uniform1f(  gpu.g_Metallic,  material.metallic );
