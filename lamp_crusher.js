@@ -68,10 +68,69 @@ export class LampCrusher extends Scene
     this.letter_r.transform = Mat4.translation( -10, -1, -30 );
 
     this.actors        = [ this.lamp, this.ground, this.letter_p, this.letter_i, this.letter_x, this.letter_a, this.letter_r ];
+
+    // Add a state variable to toggle the camera view
+    this.third_person_view = false;
+    this.intro_view = false;
+    this.always_jumping = false;
+
+    // Initialize the default camera position
+    this.initial_camera_location = Mat4.translation(5, -10, -30);
+
+    // Initialize lamp movement variables
+    this.lamp_jump_velocity = 0;
+    this.lamp_is_jumping = false;
+    this.lamp_y_position = 0;
+    this.gravity = -0.1;
+    this.jump_strength = 1.0;
+    this.original_lamp_y = 0; // Store the original y position of the lamp - starting ground level of the lamp
   }
 
   make_control_panel()
   {
+    this.key_triggered_button("Toggle Third Person View", ["t"], () => {
+      this.third_person_view = !this.third_person_view;
+    });
+
+    this.key_triggered_button("Toggle Intro View", ["i"], () => {
+      this.intro_view = !this.intro_view;
+    });
+
+    this.key_triggered_button("Lamp Jump", ["j"], () => {
+      if (!this.lamp_is_jumping) {
+        this.lamp_jump_velocity = this.jump_strength; // Initial jump velocity
+        this.lamp_is_jumping = true;
+      }
+    });
+    this.key_triggered_button("Always Jump", ["a"], () => {
+      this.always_jumping = !this.always_jumping;
+      if (this.always_jumping && !this.lamp_is_jumping) {
+        this.lamp_jump_velocity = this.jump_strength; // Initial jump velocity
+        this.lamp_is_jumping = true;
+      }
+    });
+
+  }
+
+  update_lamp_movement(dt) {
+    if (this.lamp_is_jumping) {
+      this.lamp_jump_velocity += this.gravity * dt;
+      this.lamp_y_position += this.lamp_jump_velocity * dt;
+
+      if (this.lamp_y_position <= this.original_lamp_y) { // Check if the lamp is on the ground
+        this.lamp_y_position = this.original_lamp_y; // Reset to ground level
+        this.lamp_is_jumping = false;
+        this.lamp_jump_velocity = 0;
+
+        if (this.always_jumping) {
+          this.lamp_jump_velocity = this.jump_strength; // Initial jump velocity
+          this.lamp_is_jumping = true;
+        }
+      }
+
+      let lamp_transform = Mat4.translation(0, this.lamp_y_position, 0);
+      this.lamp.transform = lamp_transform.times(Mat4.translation(0, 0, 0)); // subject to change?
+    }
   }
 
   display(context, program_state)
@@ -94,6 +153,37 @@ export class LampCrusher extends Scene
 
     // *** Lights: *** Values of vector or point lights.
     program_state.directional_light = new DirectionalLight( vec3( -1, -1, 1 ), vec3( 1, 1, 1 ), 20 );
+
+
+    // Update lamp movement
+    let dt = program_state.animation_delta_time / 1000; // Delta time in seconds
+    dt *= 20; // Speed up the animation
+    this.update_lamp_movement(dt);
+
+
+    // Update camera based on the view mode - third person view of the lamp
+    if (this.third_person_view) {
+      const lamp_position = this.lamp.transform.times(vec4(0, 0, 0, 1)).to3();
+      const camera_offset = vec3(40, 0, 0);  // Adjust this offset to get the desired third-person view
+      const camera_position = lamp_position.plus(camera_offset);
+      const target_position = lamp_position;
+
+      const up_vector = vec3(0, 1, 0);  // Assuming the up direction is the positive Y-axis
+      const camera_transform = Mat4.look_at(camera_position, target_position, up_vector);
+
+      program_state.set_camera(camera_transform);
+    } else if(this.intro_view){
+      const camera_position = vec3(40, 0,0);
+      const target_position = this.letter_x.transform.times(vec4(0, 0, 0, 1)).to3();
+
+      const up_vector = vec3(0, 1, 0);  // Assuming the up direction is the positive Y-axis
+      const camera_transform = Mat4.look_at(camera_position, target_position, up_vector);
+
+      program_state.set_camera(camera_transform);
+    }
+    else {
+      program_state.set_camera(this.initial_camera_location);
+    }
     
     /*
       TODO: GAME LOGIC GOES HERE
