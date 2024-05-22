@@ -483,11 +483,10 @@ export class StandardBrdf extends Shader
 
       // NOTE(bshihabi): A lot of this lighting shader is taken from my own personal renderer
       // Mostly translated from HLSL to GLSL
-      float distribution_ggx( vec3 normal, vec3 halfway_vector, float roughness )
+      float distribution_ggx( float NdotH, float roughness )
       {
         float a      = roughness * roughness;
         float a2     = a * a;
-        float NdotH  = max( dot( normal, halfway_vector ), 0.0 );
         float NdotH2 = NdotH * NdotH;
 
         float nom    = a2;
@@ -508,37 +507,24 @@ export class StandardBrdf extends Shader
         return nom / denom;
       }
 
-      float geometry_smith( vec3 normal, vec3 view_direction, vec3 light_direction, float roughness )
+      float geometry_smith( float NdotV, float NdotL, float roughness )
       {
-        float NdotV = max( dot( normal, view_direction ), 0.0 );
-        float NdotL = max( dot(normal, light_direction), 0.0 );
         float ggx2  = geometry_schlick_ggx( NdotV, roughness );
         float ggx1  = geometry_schlick_ggx( NdotL, roughness );
 
         return ggx1 * ggx2;
       }
 
-      vec3 fresnel_schlick( float cos_theta, vec3 f0 )
+      vec3 fresnel_schlick( float HdotV, vec3 f0 )
       {
-        return f0 + ( vec3( 1.0, 1.0, 1.0 ) - f0 ) * pow( max( 1.0 - cos_theta, 0.0 ), 5.0 );
+        return f0 + ( vec3( 1.0, 1.0, 1.0 ) - f0 ) * pow( max( 1.0 - HdotV, 0.0 ), 5.0 );
       }
 
       // Rendering Equation: ∫ fᵣ(x,ωᵢ,ωₒ,λ,t) Lᵢ(x,ωᵢ,ωₒ,λ,t) (ωᵢ⋅n̂) dωᵢ
 
-      vec3 evaluate_lambertian(vec3 diffuse)
-      {
-        return diffuse / kPI;
-      }
-
       vec3 evaluate_directional_radiance( vec3 light_diffuse, float light_intensity )
       {
         return light_diffuse * light_intensity;
-      }
-
-      float evaluate_cos_theta( vec3 light_direction, vec3 normal )
-      {
-        light_direction = -normalize( light_direction );
-        return max( dot( light_direction, normal ), 0.0 );
       }
 
       vec3 evaluate_directional_light(
@@ -563,23 +549,25 @@ export class StandardBrdf extends Shader
         vec3   f0        = vec3( 0.04, 0.04, 0.04 );
         f0               = mix( f0, diffuse, metallic );
 
+        float  NdotV     = max( dot( normal, view_direction ),         0.0 );
+        float  NdotH     = max( dot( normal, halfway_vector ),         0.0 );
+        float  HdotV     = max( dot( halfway_vector, view_direction ), 0.0 );
+        float  NdotL     = max( dot( normal, light_direction ),        0.0 );
+
         // Cook torrance BRDF
-        float  D         = distribution_ggx( normal, halfway_vector, roughness );
-        float  G         = geometry_smith( normal, view_direction, light_direction, roughness );
-        vec3   F         = fresnel_schlick( clamp( dot( halfway_vector, view_direction ), 0.0, 1.0 ), f0 );
+        float  D         = distribution_ggx( NdotH, roughness );
+        float  G         = geometry_smith( NdotV, NdotL, roughness );
+        vec3   F         = fresnel_schlick( HdotV, f0 );
 
         vec3   kS         = F;
         vec3   kD         = vec3( 1.0, 1.0, 1.0 ) - kS;
         kD               *= 1.0 - metallic;
 
         vec3  numerator   = D * G * F;
-        float denominator = 4.0 * max( dot( normal, view_direction ), 0.0 ) * max( dot( normal, light_direction ), 0.0 );
+        float denominator = 4.0 * NdotV * NdotL;
         vec3  specular    = numerator / max( denominator, 0.001 );
 
-        // Get the cosine theta of the light against the normal
-        float cos_theta      = max( dot( normal, light_direction ), 0.0 );
-
-        return ( ( ( 1.0 / kPI ) * ( kD * diffuse ) ) + specular ) * radiance * cos_theta;
+        return ( ( kD * diffuse + specular ) * radiance * NdotL ) / kPI;
       }
 
       
@@ -597,17 +585,6 @@ export class StandardBrdf extends Shader
         return world;
       }
 
-      vec3 decode_normal( vec4 encoded )
-      {
-        encoded *= 255.0;
-        vec3 ret;
-        ret.x = encoded.r / 255.0 + ( encoded.g / 255.0 ) / 255.0;
-        ret.y = encoded.b / 255.0 + ( encoded.a / 255.0 ) / 255.0;
-        ret = ret * 2.0 - 1.0;
-        ret.z = sqrt( 1.0 - ( ret.x * ret.x + ret.y * ret.y ) );
-        return ret;
-      }
-
       void main()
       {                                                           
         vec3  diffuse   = texture2D( g_DiffuseMetallic, f_UV ).rgb;
@@ -619,7 +596,7 @@ export class StandardBrdf extends Shader
         float depth     = texture2D( g_Depth,           f_UV ).r;
 
         vec3 ws_pos      = screen_to_world( f_UV, depth ).xyz;
-        vec3 view_dir    = normalize( g_WSCameraPosition.xyz - ws_pos ) * vec3( -1.0, -1.0, 1.0 );
+        vec3 view_dir    = normalize( g_WSCameraPosition.xyz - ws_pos );
         vec4 dir_ls_pos  = g_DirectionalLightViewProj * vec4( ws_pos, 1.0 );
         dir_ls_pos.xyz  /= dir_ls_pos.w;
         float shadow = 0.0;
@@ -634,8 +611,6 @@ export class StandardBrdf extends Shader
           }
         }
 
-        vec3 lambertian  = evaluate_lambertian( diffuse );
-
         vec3 directional = evaluate_directional_light(
           g_DirectionalLightDirection,
           g_DirectionalLightChromaticity,
@@ -649,7 +624,7 @@ export class StandardBrdf extends Shader
 
         vec3 irradiance = directional * ( 1.0 - shadow );
 
-        gl_FragColor    =  depth == 1.0 ? vec4( g_SkyColor, 1.0 ) : vec4( lambertian * irradiance, 1.0 );
+        gl_FragColor    =  depth == 1.0 ? vec4( g_SkyColor, 1.0 ) : vec4( irradiance, 1.0 );
       } `;
   }
 
@@ -684,7 +659,7 @@ export class StandardBrdf extends Shader
     const O = vec4(0, 0, 0, 1);
     const camera_center = gpu_state.camera_transform.times(O).to3();
     gl.uniform3fv( gpu_addresses.g_WSCameraPosition, camera_center );
-    gl.uniform3fv( gpu_addresses.g_SkyColor, vec3( 0.7578125, 0.81640625, 0.953125 ) );
+    gl.uniform3fv( gpu_addresses.g_SkyColor, vec3( 0.403, 0.538, 1.768 ) );
 
     const directional_view_proj = gpu_state.directional_light_proj.times( gpu_state.directional_light_view );
     gl.uniformMatrix4fv( gpu_addresses.g_DirectionalLightViewProj, false, Matrix.flatten_2D_to_1D( directional_view_proj.transposed() ) );
@@ -739,15 +714,15 @@ export class PostProcessing extends Shader
 
       vec3 transfer_function_gamma( vec3 color )
       {
-        return pow( color, vec3( 2.2, 2.2, 2.2 ) );
+        return pow( color, vec3( 1.0 / 2.2 ) );
       }
 
       void main()
       {                                                           
         vec3 radiometry       = texture2D( g_PBRBuffer, f_UV ).rgb;
 
-        vec3 tonemapped       = radiometry; // aces_film( radiometry );
-        vec3 gamma_compressed = radiometry; // transfer_function_gamma( tonemapped );
+        vec3 tonemapped       = aces_film( radiometry );
+        vec3 gamma_compressed = transfer_function_gamma( tonemapped );
 
         gl_FragColor = vec4( gamma_compressed, 1.0 );
       } `;
@@ -1006,8 +981,8 @@ export class Renderer
     );
     program_state.directional_light_proj = orthographic_proj( -35, 35, -35, 35, 0.1, 75 );
 
-    const orig_view = program_state.camera_inverse;
-    const orig_proj = program_state.projection_transform;
+    const orig_view = Mat4.identity().times(program_state.camera_inverse);
+    const orig_proj = Mat4.identity().times(program_state.projection_transform);
 
     program_state.camera_inverse       = program_state.directional_light_view;
     program_state.projection_transform = program_state.directional_light_proj;

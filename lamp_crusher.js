@@ -39,7 +39,7 @@ export class LampCrusher extends Scene
 
     this.ground             = new Actor();
     this.ground.mesh        = new Ground();
-    this.ground.material    = new Material(new PBRMaterial(), { diffuse: hex_color("#c2d1f4"), roughness: 1.0, metallic: 0.1 });
+    this.ground.material    = new Material(new PBRMaterial(), { diffuse: color( 0.403, 0.538, 1.768, 1.0 ), roughness: 1.0, metallic: 0.1 });
     this.ground.transform   = Mat4.translation( 0, -2.5, 0 );
 
     this.letter_p           = new Actor();
@@ -93,7 +93,7 @@ export class LampCrusher extends Scene
         Math.PI / 4, context.width / context.height, 1, 100 );
 
     // *** Lights: *** Values of vector or point lights.
-    program_state.directional_light = new DirectionalLight( vec3( -1, -1, 1 ), vec3( 1, 1, 1 ), 20 );
+    program_state.directional_light = new DirectionalLight( vec3( -1, -1, 1 ), vec3( 1, 1, 1 ), 7 );
     
     /*
       TODO: GAME LOGIC GOES HERE
