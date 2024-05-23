@@ -984,7 +984,7 @@ export class Renderer
     const orig_view = Mat4.identity().times(program_state.camera_inverse);
     const orig_proj = Mat4.identity().times(program_state.projection_transform);
 
-    program_state.camera_inverse       = program_state.directional_light_view;
+    program_state.set_camera( program_state.directional_light_view );
     program_state.projection_transform = program_state.directional_light_proj;
 
     for ( let iactor = 0; iactor < actors.length; iactor++ )
@@ -995,7 +995,7 @@ export class Renderer
       actor.mesh.draw( context, program_state, actor.transform, actor.material );
     }
 
-    program_state.camera_inverse       = orig_view;
+    program_state.set_camera( orig_view );
     program_state.projection_transform = orig_proj;
   }
 

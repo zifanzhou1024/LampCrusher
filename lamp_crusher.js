@@ -35,7 +35,7 @@ export class LampCrusher extends Scene
 
     this.lamp               = new Actor();
     this.lamp.mesh          = new Mesh( "./assets/lamp.obj" );
-    this.lamp.material      = new Material(new PBRMaterial(), { diffuse: hex_color("#ffffff"), roughness: 0.2, metallic: 0.25 });
+    this.lamp.material      = new Material(new PBRMaterial(), { diffuse: hex_color("#ffffff"), roughness: 0.1, metallic: 0.5 });
 
     this.ground             = new Actor();
     this.ground.mesh        = new Ground();
