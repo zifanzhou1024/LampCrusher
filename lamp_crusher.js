@@ -5,7 +5,7 @@ import {defs, tiny} from './examples/common.js';
 import { Renderer, DirectionalLight, Mesh, Ground, PBRMaterial } from './renderer.js'
 
 const {
-    Vector, Vector3, vec, vec3, vec4, color, hex_color, Matrix, Mat4, Light, Shape, Material, Scene, Shader,
+  Vector, Vector3, vec, vec3, vec4, color, hex_color, Matrix, Mat4, Light, Shape, Material, Scene, Shader,
 } = tiny;
 
 export class Actor
@@ -24,10 +24,10 @@ export class LampCrusher extends Scene
   {
     super();
     this.materials = {
-        plastic: new Material(new defs.Phong_Shader(),
-            {ambient: .4, diffusivity: .6, color: hex_color("#ffffff")}),
-        pbr: new Material(new PBRMaterial(),
-            {diffuse: hex_color("#ffffff")}),
+      plastic: new Material(new defs.Phong_Shader(),
+          {ambient: .4, diffusivity: .6, color: hex_color("#ffffff")}),
+      pbr: new Material(new PBRMaterial(),
+          {diffuse: hex_color("#ffffff")}),
     };
 
     this.renderer           = null;
@@ -83,41 +83,67 @@ export class LampCrusher extends Scene
     this.lamp_y_position = 0;
     this.gravity = -0.1;
     this.jump_strength = 1.0;
-    this.original_lamp_y = 0; // Store the original y position of the lamp - starting ground level of the lamp
+    // this.original_lamp_y = 0; // Store the original y position of the lamp - starting ground level of the lamp
+    // Store the original y position of the lamp dynamically
+    this.original_lamp_y = this.lamp.transform[1][3];
+
+    // Initialize lamp movement direction
+    this.lamp_direction = vec3(0, 0, -1); // Forward direction
+    this.lamp_speed = 2; // Movement speed
+
+    // Key states for movement
+    this.key_states = {};
   }
 
   make_control_panel()
   {
     this.key_triggered_button("Toggle Third Person View", ["t"], () => {
       this.third_person_view = !this.third_person_view;
+      this.key_states = {}; // Reset key states when switching view mode
     });
 
     this.key_triggered_button("Toggle Intro View", ["i"], () => {
       this.intro_view = !this.intro_view;
     });
 
+    // Maybe deprecated?
     this.key_triggered_button("Lamp Jump", ["j"], () => {
       if (!this.lamp_is_jumping) {
         this.lamp_jump_velocity = this.jump_strength; // Initial jump velocity
         this.lamp_is_jumping = true;
       }
     });
-    this.key_triggered_button("Always Jump", ["a"], () => {
+    this.key_triggered_button("Always Jump", ["k"], () => {
       this.always_jumping = !this.always_jumping;
       if (this.always_jumping && !this.lamp_is_jumping) {
         this.lamp_jump_velocity = this.jump_strength; // Initial jump velocity
         this.lamp_is_jumping = true;
       }
     });
+    document.addEventListener("keydown", (e) => {
+      if (this.third_person_view) {
+        this.key_states[e.key] = true;
+      }
+    });
+
+    document.addEventListener("keyup", (e) => {
+      if (this.third_person_view) {
+        this.key_states[e.key] = false;
+      }
+    });
+
   }
 
   update_lamp_movement(dt) {
+    // Handle jumping
     if (this.lamp_is_jumping) {
       this.lamp_jump_velocity += this.gravity * dt;
       this.lamp_y_position += this.lamp_jump_velocity * dt;
+      // let new_lamp_y_position = this.lamp_y_position + this.lamp_jump_velocity * dt;
 
       if (this.lamp_y_position <= this.original_lamp_y) { // Check if the lamp is on the ground
         this.lamp_y_position = this.original_lamp_y; // Reset to ground level
+        // new_lamp_y_position = this.original_lamp_y; // Reset to ground level
         this.lamp_is_jumping = false;
         this.lamp_jump_velocity = 0;
 
@@ -127,10 +153,45 @@ export class LampCrusher extends Scene
         }
       }
 
-      let lamp_transform = Mat4.translation(0, this.lamp_y_position, 0);
-      this.lamp.transform = lamp_transform.times(Mat4.translation(0, 0, 0)); // subject to change?
+      // Update the lamp's transform based on its current position and new y position
+      let lamp_translation = this.lamp.transform[0][3];
+      let lamp_depth = this.lamp.transform[2][3];
+      this.lamp.transform = Mat4.translation(lamp_translation, this.lamp_y_position, lamp_depth);
+
+
     }
+
+    // Handle movement
+    if (this.third_person_view) {
+      let movement_transform = Mat4.identity();
+
+      if (this.key_states["w"]) {
+        movement_transform = movement_transform.times(Mat4.translation(0, 0, -this.lamp_speed * dt));
+      }
+      if (this.key_states["s"]) {
+        movement_transform = movement_transform.times(Mat4.translation(0, 0, this.lamp_speed * dt));
+      }
+      if (this.key_states["a"]) {
+        movement_transform = movement_transform.times(Mat4.translation(-this.lamp_speed * dt, 0, 0));
+      }
+      if (this.key_states["d"]) {
+        movement_transform = movement_transform.times(Mat4.translation(this.lamp_speed * dt, 0, 0));
+      }
+      if (this.key_states[" "]) {
+        if (!this.lamp_is_jumping) {
+          this.lamp_jump_velocity = this.jump_strength; // Initial jump velocity
+          this.lamp_is_jumping = true;
+        }
+      }
+
+      this.lamp.transform = movement_transform.times(this.lamp.transform);
+
+
+      // this.original_lamp_y = this.lamp.transform[1][3]; // Add this line if want the lamp to jump infinitely high
+    }
+
   }
+
 
   display(context, program_state)
   {
@@ -156,19 +217,22 @@ export class LampCrusher extends Scene
     /*
       TODO: GAME LOGIC GOES HERE
     */
+
     // Update lamp movement
     let dt = program_state.animation_delta_time / 1000; // Delta time in seconds
     dt *= 20; // Speed up the animation
     this.update_lamp_movement(dt);
 
+    // Store the initial camera location for manual controls
+    let camera_transform = program_state.camera_inverse;
 
     // Update camera based on the view mode - third person view of the lamp
     if (this.third_person_view) {
       const lamp_position = this.lamp.transform.times(vec4(0, 0, 0, 1)).to3();
-      const camera_offset = vec3(40, 0, 0);  // Adjust this offset to get the desired third-person view
+      // const camera_offset = vec3(40, 0, 0);  // Adjust this offset to get the desired third-person view
+      const camera_offset = vec3(10, 5, 10);  // Adjust this offset to get the desired third-person view
       const camera_position = lamp_position.plus(camera_offset);
       const target_position = lamp_position;
-
       const up_vector = vec3(0, 1, 0);  // Assuming the up direction is the positive Y-axis
       const camera_transform = Mat4.look_at(camera_position, target_position, up_vector);
 
@@ -176,14 +240,14 @@ export class LampCrusher extends Scene
     } else if(this.intro_view){
       const camera_position = vec3(40, 0,0);
       const target_position = this.letter_x.transform.times(vec4(0, 0, 0, 1)).to3();
-
       const up_vector = vec3(0, 1, 0);  // Assuming the up direction is the positive Y-axis
       const camera_transform = Mat4.look_at(camera_position, target_position, up_vector);
 
       program_state.set_camera(camera_transform);
     }
     else {
-      program_state.set_camera(this.initial_camera_location);
+      program_state.set_camera(camera_transform);
+
     }
 
     this.renderer.submit( context, program_state, this.actors )
