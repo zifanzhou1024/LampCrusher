@@ -8,13 +8,74 @@ const {
   Vector, Vector3, vec, vec3, vec4, color, hex_color, Matrix, Mat4, Light, Shape, Material, Scene, Shader,
 } = tiny;
 
-export class Actor
-{
-  constructor()
-  {
+class BoundingBox {
+  constructor(min, max) {
+    this.min = min;
+    this.max = max;
+  }
+
+  // Check if this bounding box intersects with another bounding box
+  intersects(other) {
+    return (this.min[0] <= other.max[0] && this.max[0] >= other.min[0]) &&
+        (this.min[1] <= other.max[1] && this.max[1] >= other.min[1]) &&
+        (this.min[2] <= other.max[2] && this.max[2] >= other.min[2]);
+  }
+}
+
+class Actor {
+  constructor() {
     this.transform = Mat4.identity();
-    this.mesh      = null;
-    this.material  = null;
+    this.mesh = null;
+    this.material = null;
+    this.bounding_box = null;
+    this.active = true; // To track if the actor is active
+  }
+
+  // Update bounding box based on the current transform
+  update_bounding_box() {
+    if (this.mesh && this.mesh.get_bounding_box) {
+      const local_bb = this.mesh.get_bounding_box(); // {min: vec3, max: vec3}
+      const world_min = this.transform.times(vec4(local_bb.min, 1)).to3();
+      const world_max = this.transform.times(vec4(local_bb.max, 1)).to3();
+
+      // Make the bounding box larger for better collision detection
+      const size_increase = vec3(5, 5, 5); // Adjust the size increase as needed
+      const larger_min = world_min.minus(size_increase);
+      const larger_max = world_max.plus(size_increase);
+
+      this.bounding_box = new BoundingBox(larger_min, larger_max);
+      console.log(`Updated bounding box for ${this.constructor.name}: Min: ${larger_min}, Max: ${larger_max}`);
+    }
+  }
+}
+
+class ParticleEffect extends Actor {
+  constructor(transform) {
+    super();
+    this.transform = transform;
+    this.duration = 1.0; // Duration of the effect in seconds
+    this.start_time = performance.now();
+  }
+
+  update(dt) {
+    // Update the particle effect, e.g., reduce duration
+    const elapsed_time = (performance.now() - this.start_time) / 1000;
+    if (elapsed_time > this.duration) {
+      // Remove or deactivate the particle effect after duration
+      this.active = false;
+    }
+  }
+
+  draw(context, program_state) {
+    // Draw the particle effect
+    if (!this.active) return;
+
+    // Implement drawing logic, e.g., drawing particles
+    // Example: Draw a simple sphere for demonstration
+    this.mesh = new defs.Subdivision_Sphere(4);
+    this.material = new Material(new defs.Phong_Shader(),
+        { ambient: 1, diffusivity: 0, specularity: 0, color: color(1, 0.5, 0) });
+    this.mesh.draw(context, program_state, this.transform, this.material);
   }
 }
 
@@ -185,14 +246,70 @@ export class LampCrusher extends Scene
       }
 
       this.lamp.transform = movement_transform.times(this.lamp.transform);
-
-
       // this.original_lamp_y = this.lamp.transform[1][3]; // Add this line if want the lamp to jump infinitely high
     }
+  }
 
+  update_bounding_boxes() {
+    for (const actor of this.actors) {
+      actor.update_bounding_box();
+    }
   }
 
 
+  check_collisions() {
+    for (const actor of this.actors) {
+      if (actor instanceof ParticleEffect) continue;
+      if (!actor.bounding_box) continue;
+
+      console.log(`Actor: ${actor.constructor.name}, Min: ${actor.bounding_box.min}, Max: ${actor.bounding_box.max}`);
+    }
+
+    for (const letter of [this.letter_p, this.letter_i, this.letter_x, this.letter_a, this.letter_r]) {
+      if (letter.bounding_box && this.lamp.bounding_box && this.lamp.bounding_box.intersects(letter.bounding_box)) {
+        console.log(`Collision detected with ${letter.constructor.name}`);
+        this.handle_collision(letter);
+      }
+    }
+  }
+
+  handle_collision(letter) {
+    // Deactivate the letter
+    letter.active = false;
+    console.log(`Deactivating letter: ${letter.constructor.name}`);
+
+    // Play collision sound
+    this.play_collision_sound();
+
+    // Display collision effect
+    this.display_collision_effect(letter.transform);
+
+    // Update game score or state
+    this.update_score();
+
+    // Optionally, stop the lamp's movement or adjust its state
+    this.lamp_jump_velocity = 0;
+    this.lamp_is_jumping = false;
+  }
+
+  play_collision_sound() {
+    // Play a sound effect for the collision
+    // const collisionSound = new Audio('./assets/collision_sound.mp3');
+    // collisionSound.play();
+  }
+
+  display_collision_effect(transform) {
+    // Display visual effects such as particles at the collision location
+    // This can be implemented using a particle system
+    const effect = new ParticleEffect(transform);
+    this.actors.push(effect);
+  }
+
+  update_score() {
+    // Update the game score
+    this.score = (this.score || 0) + 100; // Increase score by 100 points for example
+    console.log(`Score: ${this.score}`);
+  }
   display(context, program_state)
   {
     if ( !this.renderer )
@@ -222,6 +339,19 @@ export class LampCrusher extends Scene
     let dt = program_state.animation_delta_time / 1000; // Delta time in seconds
     dt *= 20; // Speed up the animation
     this.update_lamp_movement(dt);
+
+    this.update_bounding_boxes();
+    this.check_collisions();
+
+    // Update particle effects
+    for (const actor of this.actors) {
+      if (actor instanceof ParticleEffect) {
+        actor.update(program_state.animation_delta_time / 1000);
+      }
+    }
+
+    // Remove inactive particle effects
+    this.actors = this.actors.filter(actor => !(actor instanceof ParticleEffect && !actor.active));
 
     // Store the initial camera location for manual controls
     let camera_transform = program_state.camera_inverse;
@@ -253,3 +383,4 @@ export class LampCrusher extends Scene
     this.renderer.submit( context, program_state, this.actors )
   }
 }
+
