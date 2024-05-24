@@ -2,7 +2,7 @@
 // https://www.cgtrader.com/free-3d-models/furniture/lamp/pixar-lamp-518a1299-ae8f-4847-ba1a-110d4f68d172
 import { defs, tiny } from './examples/common.js';
 
-import { Renderer, DirectionalLight, Mesh, Ground, PBRMaterial } from './renderer.js'
+import { Renderer, DirectionalLight, SpotLight, Mesh, Ground, PBRMaterial, RenderBuffers } from './renderer.js'
 
 const {
   Vector, Vector3, vec, vec3, vec4, color, hex_color, Matrix, Mat4, Light, Shape, Material, Scene, Shader,
@@ -110,6 +110,13 @@ export class LampCrusher extends Scene {
 
     this.key_triggered_button("Toggle Intro View", ["i"], () => {
       this.intro_view = !this.intro_view;
+    });
+
+    this.key_triggered_button("Cycle Render Buffers", ["`"], () => {
+      if (this.renderer)
+      {
+        this.renderer.cycle_blit_buffer();
+      }
     });
 
     // Maybe deprecated?
@@ -369,6 +376,15 @@ export class LampCrusher extends Scene {
       program_state.set_camera(camera_transform);
 
     }
+
+    program_state.spot_light = new SpotLight(
+      this.lamp.transform.times(vec4(0, 1, 0.5, 1)).to3(),
+      this.lamp.transform.times(vec4(0, -0.5, 1, 0)).to3(),
+      vec3(1, 1, 1),
+      10,
+      Math.PI / 9,
+      Math.PI / 6
+    );
 
     this.renderer.submit(context, program_state, this.actors)
   }

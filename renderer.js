@@ -4,17 +4,17 @@ const {
     Vector, Vector3, vec, vec3, vec4, color, hex_color, Matrix, Mat4, Light, Shape, Material, Scene, Shader
 } = tiny;
 
-const RenderBuffers = Object.freeze({
+export const RenderBuffers = Object.freeze({
   kGBufferDiffuseMetallic: 0,
   kGBufferNormalRoughness: 1,
-  kGBufferVelocity:        2,
-  kGBufferDepth:           3,
-  kShadowMapLamp:          4,
-  kShadowMapSun:           5,
-  kPBRLighting:            6,
-  kTAA:                    7,
-  kPostProcessing:         8,
-  kCount:                  9,
+  // kGBufferVelocity:        2,
+  kGBufferDepth:           2,
+  // kShadowMapLamp:          4,
+  kShadowMapSun:           3,
+  kPBRLighting:            4,
+  // kTAA:                    5,
+  kPostProcessing:         5,
+  kCount:                  6,
 });
 
 const kShadowMapSize = 4096;
@@ -26,6 +26,19 @@ export class DirectionalLight
     this.direction    = direction;
     this.chromaticity = chromaticity;
     this.luminance    = luminance;
+  }
+}
+
+export class SpotLight
+{
+  constructor( position, direction, chromaticity, luminance, inner_cutoff, outer_cutoff )
+  {
+    this.position     = position;
+    this.direction    = direction;
+    this.chromaticity = chromaticity;
+    this.luminance    = luminance;
+    this.inner_cutoff = inner_cutoff;
+    this.outer_cutoff = outer_cutoff;
   }
 }
 
@@ -268,124 +281,6 @@ export class PBRMaterial extends Shader
   }
 }
 
-export class DiffuseMaterial extends Shader
-{
-  constructor()
-  {
-    super();
-  }
-
-  vertex_glsl_code()
-  {
-    return `
-        precision highp float;
-        varying vec3 f_Normal;
-        varying vec2 f_UV;
-
-        attribute vec3 position;
-        attribute vec3 normal;
-        attribute vec2 texture_coord;
-
-        uniform mat4 g_Model;
-        uniform mat4 g_ViewProj;
-        uniform vec3 g_SquaredScale;
-        
-        void main()
-        {                                                                   
-          vec4 world_pos = g_Model    * vec4( position, 1.0 );
-          vec4 ndc_pos   = g_ViewProj * world_pos;
-
-          // vec4 curr_pos  = ndc_pos;
-          // vec4 prev_pos  = prev_view_proj * prev_world_pos;
-
-          f_Normal           = normalize( mat3( g_Model ) * normal / g_SquaredScale );
-          f_UV               = texture_coord;
-
-          gl_Position        = ndc_pos;
-        } `;
-  }
-
-  fragment_glsl_code()
-  {
-    return `
-      #extension GL_EXT_draw_buffers : require
-      precision highp float;
-
-      varying vec3  f_Normal;
-      varying vec2  f_UV;
-
-      uniform vec3  g_Diffuse;
-      uniform float g_Roughness;
-      uniform float g_Metallic;
-
-      void main()
-      {                                                           
-        // TODO(bshihabi): We'll add texture mapping soon.
-        vec3  diffuse   = g_Diffuse;
-        vec3  normal    = normalize( f_Normal );
-        float roughness = g_Roughness;
-        float metallic  = g_Metallic;
-
-        vec3  velocity  = vec3( 0.0, 0.0, 0.0 );
-
-        gl_FragData[ 0 ] = vec4( diffuse,  metallic );
-        gl_FragData[ 1 ] = vec4( f_Normal, roughness );
-        gl_FragData[ 2 ] = vec4( velocity, 1.0 );
-      } `;
-  }
-
-  send_material( gl, gpu, material )
-  {
-    gl.uniform3fv( gpu.g_Diffuse,   material.diffuse.to3() );
-    gl.uniform1f(  gpu.g_Roughness, material.roughness );
-    gl.uniform1f(  gpu.g_Metallic,  material.metallic );
-  }
-
-  send_gpu_state( gl, gpu, gpu_state, model_transform )
-  {
-    // Use the squared scale trick from "Eric's blog" instead of inverse transpose matrix:
-    const squared_scale = model_transform.reduce(
-        ( acc, r ) =>
-        {
-            return acc.plus( vec4( ...r ).times_pairwise( r ) )
-        }, vec4( 0, 0, 0, 0 )).to3();
-    gl.uniform3fv( gpu.g_SquaredScale, squared_scale );
-
-    const view_proj = gpu_state.projection_transform.times(gpu_state.camera_inverse);
-    gl.uniformMatrix4fv( gpu.g_Model, false, Matrix.flatten_2D_to_1D( model_transform.transposed() ) );
-    gl.uniformMatrix4fv( gpu.g_ViewProj, false, Matrix.flatten_2D_to_1D( view_proj.transposed() ) );
-
-    if ( gpu_state.lights.length <= 0 )
-      return;
-
-    const directional_light_direction    = vec3( 0.0, -1.0, 0.0 );
-    const directional_light_chromaticity = vec3( 1.0, 1.0, 1.0 );
-    const directional_light_luminance    = 10.0;
-    gl.uniform3fv( gpu.g_DirectionalLightDirection,    directional_light_direction );
-    gl.uniform3fv( gpu.g_DirectionalLightChromaticity, directional_light_chromaticity );
-    gl.uniform1f ( gpu.g_DirectionalLightLuminance,    directional_light_luminance );
-    const O = vec4(0, 0, 0, 1);
-    const camera_center = gpu_state.camera_transform.times(O).to3();
-    gl.uniform3fv( gpu.g_WSCameraPosition, camera_center );
-  }
-
-  update_GPU( context, gpu_addresses, gpu_state, model_transform, material )
-  {
-    // update_GPU(): Define how to synchronize our JavaScript's variables to the GPU's.  This is where the shader
-    // recieves ALL of its inputs.  Every value the GPU wants is divided into two categories:  Values that belong
-    // to individual objects being drawn (which we call "Material") and values belonging to the whole scene or
-    // program (which we call the "Program_State").  Send both a material and a program state to the shaders
-    // within this function, one data field at a time, to fully initialize the shader for a draw.
-
-    // Fill in any missing fields in the Material object with custom defaults for this shader:
-    const defaults = { diffuse: vec3( 1, 1, 1 ), roughness: 0.2, metallic: 0.01 };
-    material = Object.assign( {}, defaults, material );
-
-    this.send_material( context, gpu_addresses, material );
-    this.send_gpu_state( context, gpu_addresses, gpu_state, model_transform );
-  }
-}
-
 export class FullscreenShader extends Shader
 {
   constructor()
@@ -471,6 +366,13 @@ export class StandardBrdf extends Shader
       uniform vec3      g_DirectionalLightDirection;
       uniform vec3      g_DirectionalLightChromaticity;
       uniform float     g_DirectionalLightLuminance;
+
+      uniform vec3      g_SpotLightDirection;
+      uniform vec3      g_SpotLightPosition;
+      uniform vec3      g_SpotLightChromaticity;
+      uniform float     g_SpotLightLuminance;
+      uniform float     g_SpotLightInnerCutoff;
+      uniform float     g_SpotLightOuterCutoff;
 
       uniform mat4      g_DirectionalLightViewProj;
 
@@ -570,6 +472,60 @@ export class StandardBrdf extends Shader
         return ( ( kD * diffuse + specular ) * radiance * NdotL ) / kPI;
       }
 
+      vec3 evaluate_spot_light(
+        vec3  light_position,
+        vec3  light_direction,
+        vec3  light_diffuse,
+        float light_intensity,
+        float light_inner_cutoff,
+        float light_outer_cutoff,
+        vec3  ws_pos,
+        vec3  view_direction,
+        vec3  normal,
+        float roughness,
+        float metallic,
+        vec3  diffuse
+      ) {
+        vec3 L               = normalize( light_position - ws_pos );
+
+        // The light direction from the fragment position
+        vec3 halfway_vector  = normalize( view_direction + L );
+
+        // Attenuate by spotlight
+        light_direction      = -normalize( light_direction );
+        float theta          = dot( L, light_direction );
+        float epsilon        = light_inner_cutoff - light_outer_cutoff;
+        float spot_atten     = clamp( ( theta - light_outer_cutoff ) / epsilon, 0.0, 1.0 ) ;
+
+        // Add the radiance
+        vec3 radiance        = light_diffuse * light_intensity * spot_atten;
+
+        // Surface reflection at 0 incidence
+        vec3   f0        = vec3( 0.04, 0.04, 0.04 );
+        f0               = mix( f0, diffuse, metallic );
+
+        float  NdotV     = max( dot( normal, view_direction ),         0.0 );
+        float  NdotH     = max( dot( normal, halfway_vector ),         0.0 );
+        float  HdotV     = max( dot( halfway_vector, view_direction ), 0.0 );
+        float  NdotL     = max( dot( normal, L ),                      0.0 );
+
+        // Cook torrance BRDF
+        float  D         = distribution_ggx( NdotH, roughness );
+        float  G         = geometry_smith( NdotV, NdotL, roughness );
+        vec3   F         = fresnel_schlick( HdotV, f0 );
+
+        vec3   kS         = F;
+        vec3   kD         = vec3( 1.0, 1.0, 1.0 ) - kS;
+        kD               *= 1.0 - metallic;
+
+        vec3  numerator   = D * G * F;
+        float denominator = 4.0 * NdotV * NdotL;
+        vec3  specular    = numerator / max( denominator, 0.001 );
+
+
+        return ( ( kD * diffuse + specular ) * radiance * NdotL ) / kPI;
+      }
+
       
       vec4 screen_to_world( vec2 uv, float depth )
       {
@@ -600,7 +556,7 @@ export class StandardBrdf extends Shader
         vec4 dir_ls_pos  = g_DirectionalLightViewProj * vec4( ws_pos, 1.0 );
         dir_ls_pos.xyz  /= dir_ls_pos.w;
         float shadow = 0.0;
-        if ( dir_ls_pos.z <= 1.0 )
+        if ( dir_ls_pos.z <= 1.0 && dir_ls_pos.x >= -1.0 && dir_ls_pos.y >= -1.0 && dir_ls_pos.x <= 1.0 && dir_ls_pos.y <= 1.0 )
         {
           dir_ls_pos = ( dir_ls_pos + 1.0 ) / 2.0;
           float closest_depth = texture2D( g_ShadowMapDirectional, dir_ls_pos.xy ).x;
@@ -622,7 +578,22 @@ export class StandardBrdf extends Shader
           diffuse
         );
 
-        vec3 irradiance = directional * ( 1.0 - shadow );
+        vec3 spot_light = evaluate_spot_light(
+          g_SpotLightPosition,
+          g_SpotLightDirection,
+          g_SpotLightChromaticity,
+          g_SpotLightLuminance,
+          g_SpotLightInnerCutoff,
+          g_SpotLightOuterCutoff,
+          ws_pos,
+          view_dir,
+          normal,
+          roughness,
+          metallic,
+          diffuse
+        );
+
+        vec3 irradiance = directional * ( 1.0 - shadow ) + spot_light;
 
         gl_FragColor    =  depth == 1.0 ? vec4( g_SkyColor, 1.0 ) : vec4( irradiance, 1.0 );
       } `;
@@ -650,19 +621,31 @@ export class StandardBrdf extends Shader
     const inverse_view_proj = Mat4.inverse( view_proj );
     gl.uniformMatrix4fv( gpu_addresses.g_InverseViewProj, false, Matrix.flatten_2D_to_1D( inverse_view_proj.transposed() ) );
 
-    if ( !gpu_state.directional_light )
-      return;
+    if ( gpu_state.directional_light )
+    {
+      gl.uniform3fv( gpu_addresses.g_DirectionalLightDirection,    gpu_state.directional_light.direction );
+      gl.uniform3fv( gpu_addresses.g_DirectionalLightChromaticity, gpu_state.directional_light.chromaticity );
+      gl.uniform1f ( gpu_addresses.g_DirectionalLightLuminance,    gpu_state.directional_light.luminance );
+      const O = vec4(0, 0, 0, 1);
+      const camera_center = gpu_state.camera_transform.times(O).to3();
+      gl.uniform3fv( gpu_addresses.g_WSCameraPosition, camera_center );
+      gl.uniform3fv( gpu_addresses.g_SkyColor, vec3( 0.403, 0.538, 1.768 ) );
 
-    gl.uniform3fv( gpu_addresses.g_DirectionalLightDirection,    gpu_state.directional_light.direction );
-    gl.uniform3fv( gpu_addresses.g_DirectionalLightChromaticity, gpu_state.directional_light.chromaticity );
-    gl.uniform1f ( gpu_addresses.g_DirectionalLightLuminance,    gpu_state.directional_light.luminance );
-    const O = vec4(0, 0, 0, 1);
-    const camera_center = gpu_state.camera_transform.times(O).to3();
-    gl.uniform3fv( gpu_addresses.g_WSCameraPosition, camera_center );
-    gl.uniform3fv( gpu_addresses.g_SkyColor, vec3( 0.403, 0.538, 1.768 ) );
+      const directional_view_proj = gpu_state.directional_light_proj.times( gpu_state.directional_light_view );
+      gl.uniformMatrix4fv( gpu_addresses.g_DirectionalLightViewProj, false, Matrix.flatten_2D_to_1D( directional_view_proj.transposed() ) );
+    }
 
-    const directional_view_proj = gpu_state.directional_light_proj.times( gpu_state.directional_light_view );
-    gl.uniformMatrix4fv( gpu_addresses.g_DirectionalLightViewProj, false, Matrix.flatten_2D_to_1D( directional_view_proj.transposed() ) );
+    if ( gpu_state.spot_light )
+    {
+      const inner_cutoff = Math.cos( gpu_state.spot_light.inner_cutoff );
+      const outer_cutoff = Math.cos( gpu_state.spot_light.outer_cutoff );
+      gl.uniform3fv( gpu_addresses.g_SpotLightPosition,     gpu_state.spot_light.position     );
+      gl.uniform3fv( gpu_addresses.g_SpotLightDirection,    gpu_state.spot_light.direction    );
+      gl.uniform3fv( gpu_addresses.g_SpotLightChromaticity, gpu_state.spot_light.chromaticity );
+      gl.uniform1f ( gpu_addresses.g_SpotLightLuminance,    gpu_state.spot_light.luminance    );
+      gl.uniform1f ( gpu_addresses.g_SpotLightInnerCutoff,  inner_cutoff                      );
+      gl.uniform1f ( gpu_addresses.g_SpotLightOuterCutoff,  outer_cutoff                      );
+    }
   }
 }
 
@@ -788,6 +771,14 @@ export class Renderer
     } );
     this.post_processing = new Material( new PostProcessing(),   { pbr_buffer: this.render_buffers[ RenderBuffers.kPBRLighting    ] } );
     this.blit            = new Material( new FullscreenShader(), { texture:    this.render_buffers[ RenderBuffers.kPostProcessing ] } );
+    this.blit_buffer     = RenderBuffers.kPostProcessing;
+  }
+
+  cycle_blit_buffer()
+  {
+    this.blit_buffer = ( this.blit_buffer + 1 ) % RenderBuffers.kCount;
+    this.blit        = new Material( new FullscreenShader(), { texture: this.render_buffers[ this.blit_buffer ] } );
+    console.log( this.blit_buffer );
   }
 
   init_gbuffer( draw_buffers_ext )
@@ -928,7 +919,7 @@ export class Renderer
     gl.bindFramebuffer( gl.FRAMEBUFFER, this.directional_shadow_map );
     gl.framebufferTexture2D( gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT,  gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kShadowMapSun ], 0 );
 
-    const framebuffer_status = gl.checkFramebufferStatus( gl.FRAMEBUFFER );
+    let framebuffer_status = gl.checkFramebufferStatus( gl.FRAMEBUFFER );
     if ( framebuffer_status !== gl.FRAMEBUFFER_COMPLETE )
     {
       console.log( framebuffer_status == gl.FRAMEBUFFER_UNSUPPORTED ); 
@@ -973,13 +964,51 @@ export class Renderer
       return;
 
 
-    const camera_center = program_state.camera_transform.times( vec3( 0, -1, 0 ) ).to3();
+    const camera_center = program_state.camera_transform.times( vec4( 0, 0, -40, 1 ) ).to3();
     program_state.directional_light_view = Mat4.look_at(
-      program_state.directional_light.direction.normalized().times( -40 ),
-      vec3( 0, 0, 0 ),
+      camera_center.plus( program_state.directional_light.direction.normalized().times( -40 ) ),
+      camera_center,
       vec3( 0, 1, 0 )
     );
     program_state.directional_light_proj = orthographic_proj( -35, 35, -35, 35, 0.1, 75 );
+
+    const orig_view = Mat4.identity().times(program_state.camera_inverse);
+    const orig_proj = Mat4.identity().times(program_state.projection_transform);
+
+    program_state.set_camera( program_state.directional_light_view );
+    program_state.projection_transform = program_state.directional_light_proj;
+
+    for ( let iactor = 0; iactor < actors.length; iactor++ )
+    {
+      const actor = actors[ iactor ];
+      if ( !actor.mesh || !actor.material )
+        continue;
+      actor.mesh.draw( context, program_state, actor.transform, actor.material );
+    }
+
+    program_state.set_camera( orig_view );
+    program_state.projection_transform = orig_proj;
+  }
+
+  render_handler_spot_shadow( context, program_state, actors )
+  {
+    const gl = this.gl;
+
+    gl.bindFramebuffer( gl.FRAMEBUFFER, this.directional_shadow_map );
+    gl.viewport( 0, 0, kShadowMapSize, kShadowMapSize );
+    gl.clear( gl.DEPTH_BUFFER_BIT );
+    gl.depthFunc( gl.LESS );
+
+    if ( !program_state.directional_light )
+      return;
+
+
+    program_state.spot_light_view = Mat4.look_at(
+      program_state.spot_light.position,
+      program_state.spot_light.position.plus( program_state.spot_light.direction ),
+      vec3( 0, 1, 0 )
+    );
+    program_state.spot_light_proj = Mat4.perspective( program_state.spot_light.outer_cutoff, 1, 0.01, 1000.0 );
 
     const orig_view = Mat4.identity().times(program_state.camera_inverse);
     const orig_proj = Mat4.identity().times(program_state.projection_transform);
