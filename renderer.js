@@ -7,14 +7,16 @@ const {
 export const RenderBuffers = Object.freeze({
   kGBufferDiffuseMetallic: 0,
   kGBufferNormalRoughness: 1,
-  // kGBufferVelocity:        2,
-  kGBufferDepth:           2,
+  kGBufferVelocity:        2,
+  kGBufferDepth:           3,
   // kShadowMapLamp:          4,
-  kShadowMapSun:           3,
-  kPBRLighting:            4,
-  // kTAA:                    5,
-  kPostProcessing:         5,
-  kCount:                  6,
+  kShadowMapSun:           4,
+  kPBRLighting:            5,
+  kAccumulation:           6,
+  kGBufferVelocityPrev:    7,
+  kTAA:                    8,
+  kPostProcessing:         9,
+  kCount:                  10,
 });
 
 const kShadowMapSize = 4096;
@@ -151,12 +153,12 @@ export class Mesh extends Shape
     this.ready = true;
   }
 
-  draw( context, program_state, model_transform, material )
+  draw( context, program_state, actor, material )
   {
     if ( !this.ready )
       return;
 
-    super.draw( context, program_state, model_transform, material );
+    super.draw( context, program_state, actor, material );
   }
 }
 
@@ -188,6 +190,8 @@ export class PBRMaterial extends Shader
         precision highp float;
         varying vec3 f_Normal;
         varying vec2 f_UV;
+        varying vec4 f_NDCPos;
+        varying vec4 f_PrevNDCPos;
 
         attribute vec3 position;
         attribute vec3 normal;
@@ -195,20 +199,28 @@ export class PBRMaterial extends Shader
 
         uniform mat4 g_Model;
         uniform mat4 g_ViewProj;
+
+        uniform mat4 g_PrevModel;
+        uniform mat4 g_PrevViewProj;
+
         uniform vec3 g_SquaredScale;
+
+        uniform vec3 g_TAAJitter;
         
         void main()
         {                                                                   
-          vec4 world_pos = g_Model    * vec4( position, 1.0 );
-          vec4 ndc_pos   = g_ViewProj * world_pos;
+          vec4 ws_pos      = g_Model    * vec4( position, 1.0 );
+          vec4 ndc_pos     = g_ViewProj * ws_pos;
 
-          // vec4 curr_pos  = ndc_pos;
-          // vec4 prev_pos  = prev_view_proj * prev_world_pos;
+          vec4 prev_ws_pos = g_PrevModel    * vec4( position, 1.0 );
+          vec4 prev_ndc    = g_PrevViewProj * prev_ws_pos;
 
-          f_Normal           = normalize( mat3( g_Model ) * normal / g_SquaredScale );
-          f_UV               = texture_coord;
+          f_NDCPos         = ndc_pos;
+          f_PrevNDCPos     = prev_ndc;
+          f_Normal         = normalize( mat3( g_Model ) * normal / g_SquaredScale );
+          f_UV             = texture_coord;
 
-          gl_Position        = ndc_pos;
+          gl_Position      = ndc_pos + vec4( g_TAAJitter.xy * ndc_pos.w, 0.0, 0.0 );
         } `;
   }
 
@@ -220,24 +232,41 @@ export class PBRMaterial extends Shader
 
       varying vec3  f_Normal;
       varying vec2  f_UV;
+      varying vec4  f_NDCPos;
+      varying vec4  f_PrevNDCPos;
 
       uniform vec3  g_Diffuse;
       uniform float g_Roughness;
       uniform float g_Metallic;
 
+      vec2 calculate_velocity(vec4 old_pos, vec4 new_pos)
+      {
+        old_pos   /= old_pos.w;
+        old_pos.xy = (old_pos.xy + vec2(1.0, 1.0)) / 2.0;
+        old_pos.y  = 1.0 - old_pos.y;
+
+        new_pos   /= new_pos.w;
+        new_pos.xy = (new_pos.xy + vec2(1.0, 1.0)) / 2.0;
+        new_pos.y  = 1.0 - new_pos.y;
+
+        vec2 velocity = (new_pos - old_pos).xy;
+        velocity.x   *= -1.0;
+        return velocity;
+      }
+
       void main()
       {                                                           
         // TODO(bshihabi): We'll add texture mapping soon.
-        vec3  diffuse   = g_Diffuse;
-        vec3  normal    = normalize( f_Normal );
-        float roughness = g_Roughness;
-        float metallic  = g_Metallic;
+        vec3  diffuse    = g_Diffuse;
+        vec3  normal     = normalize( f_Normal );
+        float roughness  = g_Roughness;
+        float metallic   = g_Metallic;
 
-        vec3  velocity  = vec3( 0.0, 0.0, 0.0 );
+        vec2  velocity   = calculate_velocity( f_PrevNDCPos, f_NDCPos );
 
         gl_FragData[ 0 ] = vec4( diffuse,  metallic );
         gl_FragData[ 1 ] = vec4( f_Normal, roughness );
-        gl_FragData[ 2 ] = vec4( velocity, 1.0 );
+        gl_FragData[ 2 ] = vec4( velocity, 0.0, 0.0 );
       } `;
   }
 
@@ -249,22 +278,28 @@ export class PBRMaterial extends Shader
     gl.uniform1f(  gpu.g_Metallic,  material.metallic );
   }
 
-  send_gpu_state( gl, gpu, gpu_state, model_transform )
+  send_gpu_state( gl, gpu, gpu_state, actor )
   {
     // Use the squared scale trick from "Eric's blog" instead of inverse transpose matrix:
-    const squared_scale = model_transform.reduce(
+    const squared_scale = actor.transform.reduce(
         ( acc, r ) =>
         {
             return acc.plus( vec4( ...r ).times_pairwise( r ) )
         }, vec4( 0, 0, 0, 0 )).to3();
     gl.uniform3fv( gpu.g_SquaredScale, squared_scale );
 
-    const view_proj = gpu_state.projection_transform.times(gpu_state.camera_inverse);
-    gl.uniformMatrix4fv( gpu.g_Model, false, Matrix.flatten_2D_to_1D( model_transform.transposed() ) );
+    gl.uniform3fv( gpu.g_TAAJitter, gpu_state.taa_jitter );
+
+    const view_proj = gpu_state.projection_transform.times( gpu_state.camera_inverse );
+    gl.uniformMatrix4fv( gpu.g_Model, false, Matrix.flatten_2D_to_1D( actor.transform.transposed() ) );
     gl.uniformMatrix4fv( gpu.g_ViewProj, false, Matrix.flatten_2D_to_1D( view_proj.transposed() ) );
+
+    const prev_view_proj = gpu_state.prev_projection.times( gpu_state.prev_camera_inverse );
+    gl.uniformMatrix4fv( gpu.g_PrevModel, false, Matrix.flatten_2D_to_1D( actor.prev_transform.transposed() ) );
+    gl.uniformMatrix4fv( gpu.g_PrevViewProj, false, Matrix.flatten_2D_to_1D( prev_view_proj.transposed() ) );
   }
 
-  update_GPU( context, gpu_addresses, gpu_state, model_transform, material )
+  update_GPU( context, gpu_addresses, gpu_state, actor, material )
   {
     // update_GPU(): Define how to synchronize our JavaScript's variables to the GPU's.  This is where the shader
     // recieves ALL of its inputs.  Every value the GPU wants is divided into two categories:  Values that belong
@@ -277,7 +312,7 @@ export class PBRMaterial extends Shader
     material = Object.assign( {}, defaults, material );
 
     this.send_material( context, gpu_addresses, material );
-    this.send_gpu_state( context, gpu_addresses, gpu_state, model_transform );
+    this.send_gpu_state( context, gpu_addresses, gpu_state, actor );
   }
 }
 
@@ -378,6 +413,8 @@ export class StandardBrdf extends Shader
 
       uniform vec3      g_WSCameraPosition;
       uniform vec3      g_SkyColor;
+
+      uniform bool      g_EnablePCF;
 
       varying vec2      f_UV;
       
@@ -541,6 +578,32 @@ export class StandardBrdf extends Shader
         return world;
       }
 
+      float pcf_shadow( vec3 ws_pos )
+      {
+        vec4 dir_ls_pos  = g_DirectionalLightViewProj * vec4( ws_pos, 1.0 );
+        dir_ls_pos.xyz  /= dir_ls_pos.w;
+        float shadow     = 0.0;
+
+        if ( dir_ls_pos.z <= 1.0 && dir_ls_pos.x >= -1.0 && dir_ls_pos.y >= -1.0 && dir_ls_pos.x <= 1.0 && dir_ls_pos.y <= 1.0 )
+        {
+          float kBias = 0.005;
+          dir_ls_pos  = ( dir_ls_pos + 1.0 ) / 2.0;
+          for ( int x = -1; x <= 1; x++ )
+          {
+            for ( int y = -1; y <= 1; y++ )
+            {
+              vec2  uv_offset     = vec2( x, y ) * ( 1.0 / 4096.0 );
+              uv_offset          *= g_EnablePCF ? 1.0 : 0.0;
+              float closest_depth = texture2D( g_ShadowMapDirectional, dir_ls_pos.xy + uv_offset ).x;
+              shadow += dir_ls_pos.z > closest_depth + kBias ? 1.0 : 0.0; 
+            }
+          }
+        }
+
+        shadow /= 9.0;
+        return shadow;
+      }
+
       void main()
       {                                                           
         vec3  diffuse   = texture2D( g_DiffuseMetallic, f_UV ).rgb;
@@ -551,21 +614,9 @@ export class StandardBrdf extends Shader
 
         float depth     = texture2D( g_Depth,           f_UV ).r;
 
-        vec3 ws_pos      = screen_to_world( f_UV, depth ).xyz;
-        vec3 view_dir    = normalize( g_WSCameraPosition.xyz - ws_pos );
-        vec4 dir_ls_pos  = g_DirectionalLightViewProj * vec4( ws_pos, 1.0 );
-        dir_ls_pos.xyz  /= dir_ls_pos.w;
-        float shadow = 0.0;
-        if ( dir_ls_pos.z <= 1.0 && dir_ls_pos.x >= -1.0 && dir_ls_pos.y >= -1.0 && dir_ls_pos.x <= 1.0 && dir_ls_pos.y <= 1.0 )
-        {
-          dir_ls_pos = ( dir_ls_pos + 1.0 ) / 2.0;
-          float closest_depth = texture2D( g_ShadowMapDirectional, dir_ls_pos.xy ).x;
-          float kBias         = 0.005;
-          if ( dir_ls_pos.z > closest_depth + kBias )
-          {
-            shadow = 1.0;
-          }
-        }
+        vec3  ws_pos      = screen_to_world( f_UV, depth ).xyz;
+        vec3  view_dir    = normalize( g_WSCameraPosition.xyz - ws_pos );
+        float shadow      = pcf_shadow( ws_pos );
 
         vec3 directional = evaluate_directional_light(
           g_DirectionalLightDirection,
@@ -621,16 +672,18 @@ export class StandardBrdf extends Shader
     const inverse_view_proj = Mat4.inverse( view_proj );
     gl.uniformMatrix4fv( gpu_addresses.g_InverseViewProj, false, Matrix.flatten_2D_to_1D( inverse_view_proj.transposed() ) );
 
+    const O = vec4(0, 0, 0, 1);
+    const camera_center = gpu_state.camera_transform.times(O).to3();
+    gl.uniform3fv( gpu_addresses.g_WSCameraPosition, camera_center );
+    gl.uniform3fv( gpu_addresses.g_SkyColor, vec3( 0.403, 0.538, 1.768 ) );
+
+    gl.uniform1i( gpu_addresses.g_EnablePCF, gpu_state.enable_pcf ? 1 : 0 );
+
     if ( gpu_state.directional_light )
     {
       gl.uniform3fv( gpu_addresses.g_DirectionalLightDirection,    gpu_state.directional_light.direction );
       gl.uniform3fv( gpu_addresses.g_DirectionalLightChromaticity, gpu_state.directional_light.chromaticity );
       gl.uniform1f ( gpu_addresses.g_DirectionalLightLuminance,    gpu_state.directional_light.luminance );
-      const O = vec4(0, 0, 0, 1);
-      const camera_center = gpu_state.camera_transform.times(O).to3();
-      gl.uniform3fv( gpu_addresses.g_WSCameraPosition, camera_center );
-      gl.uniform3fv( gpu_addresses.g_SkyColor, vec3( 0.403, 0.538, 1.768 ) );
-
       const directional_view_proj = gpu_state.directional_light_proj.times( gpu_state.directional_light_view );
       gl.uniformMatrix4fv( gpu_addresses.g_DirectionalLightViewProj, false, Matrix.flatten_2D_to_1D( directional_view_proj.transposed() ) );
     }
@@ -646,6 +699,159 @@ export class StandardBrdf extends Shader
       gl.uniform1f ( gpu_addresses.g_SpotLightInnerCutoff,  inner_cutoff                      );
       gl.uniform1f ( gpu_addresses.g_SpotLightOuterCutoff,  outer_cutoff                      );
     }
+  }
+}
+
+export class TAA extends Shader
+{
+  constructor()
+  {
+    super();
+  }
+
+  vertex_glsl_code()
+  {
+    return `
+        precision mediump float;
+
+        attribute vec3 position;
+        attribute vec2 texture_coord;
+
+        varying vec2 f_UV;
+        
+        void main()
+        {                                                                   
+          gl_Position = vec4( position.xy, 0.0, 1.0 );
+          f_UV        = texture_coord;
+        } `;
+  }
+
+  fragment_glsl_code()
+  {
+    return `
+      precision mediump float;
+
+      uniform sampler2D g_PBRBuffer;
+      uniform sampler2D g_PBRBufferPrev;
+      uniform sampler2D g_GBufferVelocity;
+      uniform sampler2D g_GBufferVelocityPrev;
+
+      uniform sampler2D g_GBufferDepth;
+
+      uniform vec3      g_Dimensions;
+
+      varying vec2 f_UV;
+
+      vec2 texel_to_uv( vec2 texel )
+      {
+        vec2 dimensions = g_Dimensions.xy;
+        // texel = clamp( texel, vec2( 0.0 ), dimensions );
+        texel /= dimensions;
+        texel.y = 1.0 - texel.y;
+
+        return texel;
+      }
+
+      void tap_curr_buffer(
+        vec2 texel_offset,
+        vec2 texel,
+        inout vec3 min_color,
+        inout vec3 max_color
+      ) {
+        vec2 uv    = texel_to_uv( texel + texel_offset );
+        vec3 color = texture2D( g_PBRBuffer, uv ).rgb;
+        min_color  = min( min_color, color );
+        max_color  = max( max_color, color );
+      }
+
+      vec2 get_dilated_texel( vec2 texel )
+      {
+        float closest_depth     = 0.0;
+        vec2  closest_texel_pos = texel;
+
+        for ( int y = -1; y <= 1; y++ )
+        {
+          for ( int x = -1; x <= 1; x++ )
+          {
+            vec2 pos                 = texel + vec2( x, y );
+            float neighborhood_depth = texture2D( g_GBufferDepth, texel_to_uv( pos ) ).r;
+
+            if ( neighborhood_depth > closest_depth )
+            {
+              closest_texel_pos = pos;
+              closest_depth     = neighborhood_depth;
+            }
+          }
+        }
+
+        return closest_texel_pos;
+      }
+
+      void main()
+      {                                                           
+        vec2 thread_id     = vec2( f_UV.x, 1.0 - f_UV.y ) * g_Dimensions.xy;
+        vec2 dilated_texel = get_dilated_texel( thread_id );
+
+        vec3 min_color_cross = vec3(  9999.0 );
+        vec3 max_color_cross = vec3( -9999.0 );
+
+        tap_curr_buffer(vec2( 0, -1), thread_id, min_color_cross, max_color_cross);
+        tap_curr_buffer(vec2(-1,  0), thread_id, min_color_cross, max_color_cross);
+        tap_curr_buffer(vec2( 0,  0), thread_id, min_color_cross, max_color_cross);
+        tap_curr_buffer(vec2( 1,  0), thread_id, min_color_cross, max_color_cross);
+        tap_curr_buffer(vec2( 0,  1), thread_id, min_color_cross, max_color_cross);
+
+        vec3 min_color_3x3   = min_color_cross;
+        vec3 max_color_3x3   = max_color_cross;
+
+        tap_curr_buffer(vec2(-1, -1), thread_id, min_color_3x3,   max_color_3x3);
+        tap_curr_buffer(vec2( 1, -1), thread_id, min_color_3x3,   max_color_3x3);
+        tap_curr_buffer(vec2(-1,  1), thread_id, min_color_3x3,   max_color_3x3);
+        tap_curr_buffer(vec2( 1,  1), thread_id, min_color_3x3,   max_color_3x3);
+
+        vec3 min_color = min_color_3x3 * 0.5 + min_color_cross * 0.5;
+        vec3 max_color = max_color_3x3 * 0.5 + max_color_cross * 0.5;
+
+        vec2 uv            = texel_to_uv( thread_id );
+        vec2 curr_velocity = texture2D( g_GBufferVelocity, uv ).xy;
+
+        vec2 reproj_uv     = uv + curr_velocity;
+        vec2 prev_velocity = texture2D( g_GBufferVelocityPrev, reproj_uv ).xy;
+
+        float acceleration          = length( prev_velocity - curr_velocity );
+        float velocity_disocclusion = clamp( ( acceleration - 0.001 ) * 10.0, 0.0, 1.0 );
+
+        vec3 curr_color    = texture2D( g_PBRBuffer,     uv ).rgb;
+        vec3 prev_color    = clamp( texture2D( g_PBRBufferPrev, reproj_uv ).rgb, min_color, max_color );
+        vec3 accumulation  = 0.9 * prev_color + 0.1 * curr_color;
+        
+        gl_FragColor       = vec4( mix( accumulation, curr_color, velocity_disocclusion ), 1.0 );
+      } `;
+  }
+
+  update_GPU( gl, gpu_addresses, gpu_state, _,  material )
+  {
+    gl.activeTexture( gl.TEXTURE0 );
+    gl.bindTexture( gl.TEXTURE_2D, material.pbr_buffer );
+    gl.uniform1i( gpu_addresses.g_PBRBuffer, 0 );
+
+    gl.activeTexture( gl.TEXTURE1 );
+    gl.bindTexture( gl.TEXTURE_2D, material.accumulation_buffer );
+    gl.uniform1i( gpu_addresses.g_PBRBufferPrev, 1 );
+
+    gl.activeTexture( gl.TEXTURE2 );
+    gl.bindTexture( gl.TEXTURE_2D, material.gbuffer_velocity );
+    gl.uniform1i( gpu_addresses.g_GBufferVelocity, 2 );
+
+    gl.activeTexture( gl.TEXTURE3 );
+    gl.bindTexture( gl.TEXTURE_2D, material.gbuffer_velocity_prev );
+    gl.uniform1i( gpu_addresses.g_GBufferVelocityPrev, 3 );
+
+    gl.activeTexture( gl.TEXTURE4 );
+    gl.bindTexture( gl.TEXTURE_2D, material.gbuffer_depth );
+    gl.uniform1i( gpu_addresses.g_GBufferDepth, 4 );
+
+    gl.uniform3fv( gpu_addresses.g_Dimensions, vec3( gl.canvas.width, gl.canvas.height, 0 ) );
   }
 }
 
@@ -759,6 +965,7 @@ export class Renderer
     this.init_gbuffer( draw_buffers_ext );
     this.init_shadow_maps();
     this.init_pbr_buffer();
+    this.init_taa_buffer();
     this.init_post_processing_buffer();
 
     this.quad = new defs.Square();
@@ -769,9 +976,46 @@ export class Renderer
       depth:                  this.render_buffers[ RenderBuffers.kGBufferDepth           ],
       shadow_map_directional: this.render_buffers[ RenderBuffers.kShadowMapSun           ],
     } );
-    this.post_processing = new Material( new PostProcessing(),   { pbr_buffer: this.render_buffers[ RenderBuffers.kPBRLighting    ] } );
+    this.taa             = new Material( new TAA(),              { 
+      pbr_buffer:            this.render_buffers[ RenderBuffers.kPBRLighting         ],
+      accumulation_buffer:   this.render_buffers[ RenderBuffers.kAccumulation        ],
+      gbuffer_velocity:      this.render_buffers[ RenderBuffers.kGBufferVelocity     ],
+      gbuffer_velocity_prev: this.render_buffers[ RenderBuffers.kGBufferVelocityPrev ],
+      gbuffer_depth:         this.render_buffers[ RenderBuffers.kGBufferDepth        ],
+    } );
+    this.post_processing = new Material( new PostProcessing(),   { pbr_buffer: this.render_buffers[ RenderBuffers.kTAA            ] } );
     this.blit            = new Material( new FullscreenShader(), { texture:    this.render_buffers[ RenderBuffers.kPostProcessing ] } );
     this.blit_buffer     = RenderBuffers.kPostProcessing;
+    this.frame_id        = 0;
+    this.enable_taa      = true;
+    this.enable_pcf      = true;
+  }
+
+  get_taa_jitter()
+  {
+    const kHaltonSequence =
+    [
+      vec( 0.500000, 0.333333 ),
+      vec( 0.250000, 0.666667 ),
+      vec( 0.750000, 0.111111 ),
+      vec( 0.125000, 0.444444 ),
+      vec( 0.625000, 0.777778 ),
+      vec( 0.375000, 0.222222 ),
+      vec( 0.875000, 0.555556 ),
+      vec( 0.062500, 0.888889 ),
+      vec( 0.562500, 0.037037 ),
+      vec( 0.312500, 0.370370 ),
+      vec( 0.812500, 0.703704 ),
+      vec( 0.187500, 0.148148 ),
+      vec( 0.687500, 0.481481 ),
+      vec( 0.437500, 0.814815 ),
+      vec( 0.937500, 0.259259 ),
+      vec( 0.031250, 0.592593 ),
+    ];
+
+    const idx = this.frame_id % kHaltonSequence.length;
+    let   ret = kHaltonSequence[ idx ].minus( vec( 0.5, 0.5 ) ).times_pairwise( vec( 2.0 / this.gl.canvas.width, 2.0 / this.gl.canvas.height) );
+    return ret.to3();
   }
 
   cycle_blit_buffer()
@@ -826,7 +1070,7 @@ export class Renderer
     gl.framebufferTexture2D( gl.FRAMEBUFFER, draw_buffers_ext.COLOR_ATTACHMENT2_WEBGL, gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kGBufferVelocity        ], 0 );
     gl.framebufferTexture2D( gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT,                      gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kGBufferDepth           ], 0 );
 
-    const framebuffer_status = gl.checkFramebufferStatus( gl.FRAMEBUFFER );
+    let framebuffer_status = gl.checkFramebufferStatus( gl.FRAMEBUFFER );
     if ( framebuffer_status !== gl.FRAMEBUFFER_COMPLETE )
     {
       console.log( framebuffer_status == gl.FRAMEBUFFER_UNSUPPORTED );
@@ -839,6 +1083,25 @@ export class Renderer
       draw_buffers_ext.COLOR_ATTACHMENT2_WEBGL,
       draw_buffers_ext.COLOR_ATTACHMENT3_WEBGL,
     ] );
+
+    this.velocity_prev = gl.createFramebuffer();
+    this.render_buffers[ RenderBuffers.kGBufferVelocityPrev ] = gl.createTexture();
+
+    gl.bindTexture( gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kGBufferVelocityPrev ] );
+    gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGBA,  gl.canvas.width, gl.canvas.height, 0, gl.RGBA, gl.FLOAT, null );
+    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR );
+    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR );
+    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE );
+    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE );
+
+    gl.bindFramebuffer( gl.FRAMEBUFFER, this.velocity_prev );
+    gl.framebufferTexture2D( gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kGBufferVelocityPrev ], 0 );
+
+    framebuffer_status = gl.checkFramebufferStatus( gl.FRAMEBUFFER );
+    if ( framebuffer_status !== gl.FRAMEBUFFER_COMPLETE )
+    {
+      alert( "Failed to create Velocity Prev!" );
+    }
 
     gl.bindTexture( gl.TEXTURE_2D, null );
     gl.bindFramebuffer( gl.FRAMEBUFFER, null );
@@ -862,15 +1125,59 @@ export class Renderer
     gl.bindFramebuffer( gl.FRAMEBUFFER, this.pbr_buffer );
     gl.framebufferTexture2D( gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kPBRLighting  ], 0 );
 
-    const framebuffer_status = gl.checkFramebufferStatus( gl.FRAMEBUFFER );
+    let framebuffer_status = gl.checkFramebufferStatus( gl.FRAMEBUFFER );
     if ( framebuffer_status !== gl.FRAMEBUFFER_COMPLETE )
     {
-      console.log( framebuffer_status == gl.FRAMEBUFFER_UNSUPPORTED ); 
       alert( "Failed to create PBR Buffer!" );
     }
 
     gl.bindTexture( gl.TEXTURE_2D, null );
     gl.bindFramebuffer( gl.FRAMEBUFFER, null );
+  }
+
+  init_taa_buffer()
+  {
+    const gl = this.gl;
+
+    this.taa_buffer = gl.createFramebuffer();
+    
+    this.render_buffers[ RenderBuffers.kTAA ] = gl.createTexture();
+
+    gl.bindTexture( gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kTAA ] );
+    gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGBA, gl.canvas.width, gl.canvas.height, 0, gl.RGBA, gl.FLOAT, null );
+    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR );
+    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR );
+    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE );
+    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE );
+
+    gl.bindFramebuffer( gl.FRAMEBUFFER, this.taa_buffer );
+    gl.framebufferTexture2D( gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kTAA  ], 0 );
+
+    let framebuffer_status = gl.checkFramebufferStatus( gl.FRAMEBUFFER );
+    if ( framebuffer_status !== gl.FRAMEBUFFER_COMPLETE )
+    {
+      alert( "Failed to create TAA Buffer!" );
+    }
+
+    this.accumulation_buffer = gl.createFramebuffer();
+
+    this.render_buffers[ RenderBuffers.kAccumulation ] = gl.createTexture();
+
+    gl.bindTexture( gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kAccumulation ] );
+    gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGBA, gl.canvas.width, gl.canvas.height, 0, gl.RGBA, gl.FLOAT, null );
+    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR );
+    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR );
+    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE );
+    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE );
+
+    gl.bindFramebuffer( gl.FRAMEBUFFER, this.accumulation_buffer );
+    gl.framebufferTexture2D( gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.render_buffers[ RenderBuffers.kAccumulation ], 0 );
+
+    framebuffer_status = gl.checkFramebufferStatus( gl.FRAMEBUFFER );
+    if ( framebuffer_status !== gl.FRAMEBUFFER_COMPLETE )
+    {
+      alert( "Failed to create accumulation buffer!" );
+    }
   }
 
   init_post_processing_buffer()
@@ -946,7 +1253,12 @@ export class Renderer
       const actor = actors[ iactor ];
       if ( !actor.mesh || !actor.material )
         continue;
-      actor.mesh.draw( context, program_state, actor.transform, actor.material );
+      if ( !actor.prev_transform )
+      {
+        actor.prev_transform = actor.transform;
+      }
+      actor.mesh.draw( context, program_state, actor, actor.material );
+      actor.prev_transform = actor.transform;
     }
   }
 
@@ -983,7 +1295,7 @@ export class Renderer
       const actor = actors[ iactor ];
       if ( !actor.mesh || !actor.material )
         continue;
-      actor.mesh.draw( context, program_state, actor.transform, actor.material );
+      actor.mesh.draw( context, program_state, actor, actor.material );
     }
 
     program_state.set_camera( orig_view );
@@ -1021,7 +1333,7 @@ export class Renderer
       const actor = actors[ iactor ];
       if ( !actor.mesh || !actor.material )
         continue;
-      actor.mesh.draw( context, program_state, actor.transform, actor.material );
+      actor.mesh.draw( context, program_state, actor, actor.material );
     }
 
     program_state.set_camera( orig_view );
@@ -1038,7 +1350,27 @@ export class Renderer
     gl.clear( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT );
 
     gl.depthFunc( gl.ALWAYS );
-    this.quad.draw( context, program_state, Mat4.identity(), this.standard_brdf );
+    this.quad.draw( context, program_state, null, this.standard_brdf );
+  }
+
+  render_handler_taa( context, program_state )
+  {
+    const gl = this.gl;
+
+    gl.bindFramebuffer( gl.FRAMEBUFFER, this.taa_buffer );
+    gl.viewport( 0, 0, gl.canvas.width, gl.canvas.height );
+    gl.clearColor( 0.7578125, 0.81640625, 0.953125, 1.0 );
+    gl.clear( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT );
+
+    gl.depthFunc( gl.ALWAYS );
+    if ( this.enable_taa )
+    {
+      this.quad.draw( context, program_state, null, this.taa );
+    }
+    else
+    {
+      this.quad.draw( context, program_state, null, this.blit.override( { texture: this.render_buffers[ RenderBuffers.kPBRLighting ] } ) );
+    }
   }
 
   render_handler_post_processing( context, program_state )
@@ -1051,7 +1383,27 @@ export class Renderer
     gl.clear( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT );
     gl.depthFunc( gl.ALWAYS );
 
-    this.quad.draw( context, program_state, Mat4.identity(), this.post_processing );
+    this.quad.draw( context, program_state, null, this.post_processing );
+  }
+
+  render_handler_copy_temporal( context, program_state )
+  {
+    const gl = this.gl;
+    gl.bindFramebuffer( gl.FRAMEBUFFER, this.accumulation_buffer );
+    gl.viewport( 0, 0, gl.canvas.width, gl.canvas.height );
+    gl.clearColor( 0.0, 0.0, 0.0, 0.0 );
+    gl.clear( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT );
+    gl.depthFunc( gl.ALWAYS );
+
+    this.quad.draw( context, program_state, null, this.blit.override( { texture: this.render_buffers[ RenderBuffers.kTAA ] } ) );
+
+    gl.bindFramebuffer( gl.FRAMEBUFFER, this.velocity_prev );
+    gl.viewport( 0, 0, gl.canvas.width, gl.canvas.height );
+    gl.clearColor( 0.0, 0.0, 0.0, 0.0 );
+    gl.clear( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT );
+    gl.depthFunc( gl.ALWAYS );
+
+    this.quad.draw( context, program_state, null, this.blit.override( { texture: this.render_buffers[ RenderBuffers.kGBufferVelocity ] } ) );
   }
 
   render_handler_blit( context, program_state )
@@ -1064,16 +1416,46 @@ export class Renderer
     gl.clear( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT );
     gl.depthFunc( gl.ALWAYS );
 
-    this.quad.draw( context, program_state, Mat4.identity(), this.blit );
+    this.quad.draw( context, program_state, null, this.blit );
   }
 
   submit( context, program_state, actors )
   {
     const gl = this.gl;
-    this.render_handler_gbuffer(            context, program_state, actors );
+
+    if ( !program_state.prev_projection )
+    {
+      program_state.prev_projection     = program_state.projection_transform;
+    }
+
+    if ( !program_state.prev_camera_inverse )
+    {
+      program_state.prev_camera_inverse = Mat4.identity().times( program_state.camera_inverse );
+    }
+
+    if ( this.enable_taa )
+    {
+      program_state.taa_jitter = this.get_taa_jitter();
+    }
+    else
+    {
+      program_state.taa_jitter = vec3( 0, 0, 0 );
+    }
+
+    this.render_handler_gbuffer( context, program_state, actors );
+
+    program_state.prev_projection     = program_state.projection_transform;
+    program_state.prev_camera_inverse = Mat4.identity().times( program_state.camera_inverse );
+      
+    program_state.taa_jitter = vec3( 0, 0, 0 )
     this.render_handler_directional_shadow( context, program_state, actors );
+    program_state.enable_pcf = this.enable_pcf;
     this.render_handler_lighting(           context, program_state, actors );
+    this.render_handler_taa( context, program_state );
+    this.render_handler_copy_temporal( context, program_state );
     this.render_handler_post_processing(    context, program_state, actors );
     this.render_handler_blit(               context, program_state, actors );
+
+    this.frame_id++;
   }
 };

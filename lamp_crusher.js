@@ -112,13 +112,6 @@ export class LampCrusher extends Scene {
       this.intro_view = !this.intro_view;
     });
 
-    this.key_triggered_button("Cycle Render Buffers", ["`"], () => {
-      if (this.renderer)
-      {
-        this.renderer.cycle_blit_buffer();
-      }
-    });
-
     // Maybe deprecated?
     this.key_triggered_button("Lamp Jump", ["j"], () => {
       if (!this.lamp_is_jumping) {
@@ -144,7 +137,29 @@ export class LampCrusher extends Scene {
         this.key_states[e.key] = false;
       }
     });
+    this.new_line();
+    this.new_line();
 
+    this.key_triggered_button("Cycle Render Buffers", ["`"], () => {
+      if (this.renderer)
+      {
+        this.renderer.cycle_blit_buffer();
+      }
+    });
+
+    this.key_triggered_button("Toggle Temporal Anti-Aliasing", ["["], () => {
+      if (this.renderer)
+      {
+        this.renderer.enable_taa = !this.renderer.enable_taa;
+      }
+    });
+
+    this.key_triggered_button("Toggle PCF Shadows", ["]"], () => {
+      if (this.renderer)
+      {
+        this.renderer.enable_pcf = !this.renderer.enable_pcf;
+      }
+    });
   }
   handle_mouse_wheel(e) {
     if (this.third_person_view) {
