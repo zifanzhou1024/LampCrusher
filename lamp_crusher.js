@@ -35,36 +35,43 @@ export class LampCrusher extends Scene {
     this.lamp = new Actor();
     this.lamp.mesh = new Mesh("./assets/lamp.obj");
     this.lamp.material = new Material(new PBRMaterial(), { diffuse: hex_color("#ffffff"), roughness: 0.1, metallic: 0.5 });
+    this.lamp.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the lamp
 
     this.ground = new Actor();
     this.ground.mesh = new Ground();
     this.ground.material = new Material(new PBRMaterial(), { diffuse: color(0.403, 0.538, 1.768, 1.0), roughness: 1.0, metallic: 0.1 });
     this.ground.transform = Mat4.translation(0, -2.5, 0);
+    this.ground.mesh.bounding_box = vec3(10, 0.1, 10); // Set an appropriate bounding box for the ground
 
     this.letter_p = new Actor();
     this.letter_p.mesh = new Mesh("./assets/pixar_p.obj");
     this.letter_p.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_p.transform = Mat4.translation(-10, -1, 30);
+    this.letter_p.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter P
 
     this.letter_i = new Actor();
     this.letter_i.mesh = new Mesh("./assets/pixar_i.obj");
     this.letter_i.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_i.transform = Mat4.translation(-10, -1.5, 15); // idk wtf happened with the import honestly
+    this.letter_i.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter I
 
     this.letter_x = new Actor();
     this.letter_x.mesh = new Mesh("./assets/pixar_x.obj");
     this.letter_x.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_x.transform = Mat4.translation(-10, -1, 0);
+    this.letter_x.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter X
 
     this.letter_a = new Actor();
     this.letter_a.mesh = new Mesh("./assets/pixar_a.obj");
     this.letter_a.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_a.transform = Mat4.translation(-10, -1, -15);
+    this.letter_a.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter A
 
     this.letter_r = new Actor();
     this.letter_r.mesh = new Mesh("./assets/pixar_r.obj");
     this.letter_r.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_r.transform = Mat4.translation(-10, -1, -30);
+    this.letter_r.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter R
 
     this.actors = [this.lamp, this.ground, this.letter_p, this.letter_i, this.letter_x, this.letter_a, this.letter_r];
 
@@ -205,7 +212,92 @@ export class LampCrusher extends Scene {
   prevent_default_behavior(e) {
     e.preventDefault();
   }
-  
+
+  getOBB(actor) {
+    const transform = actor.transform;
+    const position = vec3(transform[0][3], transform[1][3], transform[2][3]);
+    const orientation = [
+      vec3(transform[0][0], transform[1][0], transform[2][0]),
+      vec3(transform[0][1], transform[1][1], transform[2][1]),
+      vec3(transform[0][2], transform[1][2], transform[2][2])
+    ];
+    const size = actor.mesh.bounding_box || vec3(1, 1, 1); // Ensure size is defined
+    return { position, orientation, size };
+  }
+
+  areOBBsColliding(obb1, obb2) {
+    const getSeparatingAxes = (obb1, obb2) => {
+      const axes = [
+        obb1.orientation[0],
+        obb1.orientation[1],
+        obb1.orientation[2],
+        obb2.orientation[0],
+        obb2.orientation[1],
+        obb2.orientation[2],
+      ];
+
+      for (let i = 0; i < 3; i++) {
+        for (let j = 0; j < 3; j++) {
+          axes.push(obb1.orientation[i].cross(obb2.orientation[j]).normalized());
+        }
+      }
+
+      return axes;
+    }
+
+    const axes = getSeparatingAxes(obb1, obb2);
+
+    for (let axis of axes) {
+      if (!this.overlapOnAxis(obb1, obb2, axis)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  overlapOnAxis(obb1, obb2, axis) {
+    const project = (obb, axis) => {
+      const corners = this.getCorners(obb);
+      let min = corners[0].dot(axis);
+      let max = min;
+      for (let i = 1; i < corners.length; i++) {
+        const projection = corners[i].dot(axis);
+        if (projection < min) {
+          min = projection;
+        }
+        if (projection > max) {
+          max = projection;
+        }
+      }
+      return [min, max];
+    }
+
+    const [min1, max1] = project(obb1, axis);
+    const [min2, max2] = project(obb2, axis);
+
+    return !(min1 > max2 || min2 > max1);
+  }
+
+  getCorners(obb) {
+    const corners = [];
+    const { position, orientation, size } = obb;
+    const directions = [
+      vec3(-1, -1, -1), vec3(-1, -1, 1), vec3(-1, 1, -1), vec3(-1, 1, 1),
+      vec3(1, -1, -1), vec3(1, -1, 1), vec3(1, 1, -1), vec3(1, 1, 1),
+    ];
+
+    for (let direction of directions) {
+      let corner = position.copy();
+      for (let i = 0; i < 3; i++) {
+        corner = corner.plus(orientation[i].times(direction[i] * size[i]));
+      }
+      corners.push(corner);
+    }
+
+    return corners;
+  }
+
   update_lamp_movement(dt) {
     // Handle jumping
     if (this.lamp_is_jumping) {
@@ -303,8 +395,20 @@ export class LampCrusher extends Scene {
       }
 
       this.lamp.transform = mvmt_trans.times(this.lamp.transform);
-
       // this.original_lamp_y = this.lamp.transform[1][3]; // Add this line if want the lamp to jump infinitely high
+
+      // Collision detection
+      const lampOBB = this.getOBB(this.lamp);
+      for (let i = this.actors.length - 1; i >= 0; i--) {
+        const actor = this.actors[i];
+        if (actor !== this.lamp) {
+          const actorOBB = this.getOBB(actor);
+          if (this.areOBBsColliding(lampOBB, actorOBB)) {
+            console.log("Collision detected with", actor);
+            this.actors.splice(i, 1); // Remove the actor from the array
+          }
+        }
+      }
     }
 
   }
