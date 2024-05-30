@@ -427,12 +427,17 @@ export class LampCrusher extends Scene {
         if (actor !== this.lamp) {
           const actorOBB = this.getOBB(actor);
           if (this.areOBBsColliding(lampOBB, actorOBB)) {
-            console.log("Collision detected with", actor);
-            this.actors.splice(i, 1); // Remove the actor from the array
+            if (this.lamp_is_jumping && this.lamp_jump_velocity < 0) {
+              console.log("Collision detected with", actor);
+              this.actors.splice(i, 1); // Remove the actor from the array
 
-            // Update score
-            this.score += 50;
-            this.updateScoreDisplay();
+              // Update score
+              this.score += 50;
+              this.updateScoreDisplay();
+            } else {
+              // Prevent XZ movement clipping
+              this.preventClipping(lampOBB, actorOBB);
+            }
           }
         }
       }
@@ -449,6 +454,38 @@ export class LampCrusher extends Scene {
     
     this.canvas.requestPointerLock();
   }
+
+  // Function to prevent clipping between the lamp and another actor
+  preventClipping(lampOBB, actorOBB) {
+    const lampPosition = lampOBB.position;
+    const actorPosition = actorOBB.position;
+    const lampSize = lampOBB.size;
+    const actorSize = actorOBB.size;
+
+    const deltaX = lampPosition[0] - actorPosition[0];
+    const deltaZ = lampPosition[2] - actorPosition[2];
+
+    const overlapX = (lampSize[0] + actorSize[0]) / 2 - Math.abs(deltaX);
+    const overlapZ = (lampSize[2] + actorSize[2]) / 2 - Math.abs(deltaZ);
+
+    if (overlapX < overlapZ) {
+      if (deltaX > 0) {
+        lampPosition[0] = actorPosition[0] + (lampSize[0] + actorSize[0]) / 2;
+      } else {
+        lampPosition[0] = actorPosition[0] - (lampSize[0] + actorSize[0]) / 2;
+      }
+    } else {
+      if (deltaZ > 0) {
+        lampPosition[2] = actorPosition[2] + (lampSize[2] + actorSize[2]) / 2;
+      } else {
+        lampPosition[2] = actorPosition[2] - (lampSize[2] + actorSize[2]) / 2;
+      }
+    }
+
+    this.lamp.transform[0][3] = lampPosition[0];
+    this.lamp.transform[2][3] = lampPosition[2];
+  }
+
 
   display(context, program_state) {
     if (!this.renderer) {
