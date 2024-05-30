@@ -105,20 +105,22 @@ export class LampCrusher extends Scene {
     this.camera_rotation_x = 0;
     this.camera_rotation_y = 0;
 
-    // Initialize score
-    this.score = 0;
-    // Create a HTML element for displaying the score
-    const scoreElement = document.createElement('div');
-    scoreElement.id = 'score';
-    scoreElement.style.position = 'absolute';
-    scoreElement.style.top = '10px';
-    scoreElement.style.left = '50%';
-    scoreElement.style.transform = 'translateX(-50%)';
-    scoreElement.style.color = 'red';
-    scoreElement.style.fontSize = '20px';
-    scoreElement.style.fontFamily = 'Arial, sans-serif';
-    scoreElement.textContent = `Score: ${this.score}`;
-    document.body.appendChild(scoreElement);
+    // Initialize health
+    this.health = 100;
+    // Create a HTML element for displaying the health
+    const healthElement = document.createElement('div');
+    healthElement.id = 'health';
+    healthElement.style.position = 'absolute';
+    healthElement.style.top = '10px';
+    healthElement.style.left = '50%';
+    healthElement.style.transform = 'translateX(-50%)';
+    healthElement.style.color = 'red';
+    healthElement.style.fontSize = '20px';
+    healthElement.style.fontFamily = 'Arial, sans-serif';
+    healthElement.textContent = `Health: ${this.health}`;
+    document.body.appendChild(healthElement);
+    // Initialize the health decrease timer
+    this.health_decrease_interval = setInterval(this.decreaseHealth.bind(this), 100);
   }
 
   make_control_panel() {
@@ -431,9 +433,9 @@ export class LampCrusher extends Scene {
               console.log("Collision detected with", actor);
               this.actors.splice(i, 1); // Remove the actor from the array
 
-              // Update score
-              this.score += 50;
-              this.updateScoreDisplay();
+              // Update health
+              this.health += 50;
+              this.updateHealthDisplay();
             } else {
               // Prevent XZ movement clipping
               this.preventClipping(lampOBB, actorOBB);
@@ -442,12 +444,17 @@ export class LampCrusher extends Scene {
         }
       }
     }
-
   }
-  updateScoreDisplay() {
-    const scoreElement = document.getElementById('score');
-    if (scoreElement) {
-      scoreElement.textContent = `Score: ${this.score}`;
+  decreaseHealth() {
+    if (this.health > 0) {
+      this.health -= 1;
+      this.updateHealthDisplay();
+    }
+  }
+  updateHealthDisplay() {
+    const healthElement = document.getElementById('health');
+    if (healthElement) {
+      healthElement.textContent = `Health: ${this.health}`;
     }
   }
   request_pointer_lock() {
