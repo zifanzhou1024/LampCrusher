@@ -13,6 +13,8 @@ export class Actor {
     this.transform = Mat4.identity();
     this.mesh = null;
     this.material = null;
+    this.bounding_box = null; // Optional bounding box for collision detection
+    this.active = true; // Set to false to remove the actor from the scene
   }
 }
 
@@ -102,6 +104,21 @@ export class LampCrusher extends Scene {
     // mouse stuff
     this.camera_rotation_x = 0;
     this.camera_rotation_y = 0;
+
+    // Initialize score
+    this.score = 0;
+    // Create a HTML element for displaying the score
+    const scoreElement = document.createElement('div');
+    scoreElement.id = 'score';
+    scoreElement.style.position = 'absolute';
+    scoreElement.style.top = '10px';
+    scoreElement.style.left = '50%';
+    scoreElement.style.transform = 'translateX(-50%)';
+    scoreElement.style.color = 'red';
+    scoreElement.style.fontSize = '20px';
+    scoreElement.style.fontFamily = 'Arial, sans-serif';
+    scoreElement.textContent = `Score: ${this.score}`;
+    document.body.appendChild(scoreElement);
   }
 
   make_control_panel() {
@@ -213,6 +230,7 @@ export class LampCrusher extends Scene {
     e.preventDefault();
   }
 
+  // Function to get the Oriented Bounding Box (OBB) of an actor
   getOBB(actor) {
     const transform = actor.transform;
     const position = vec3(transform[0][3], transform[1][3], transform[2][3]);
@@ -225,6 +243,7 @@ export class LampCrusher extends Scene {
     return { position, orientation, size };
   }
 
+  // Function to check if two OBBs are colliding
   areOBBsColliding(obb1, obb2) {
     const getSeparatingAxes = (obb1, obb2) => {
       const axes = [
@@ -256,6 +275,7 @@ export class LampCrusher extends Scene {
     return true;
   }
 
+  // Function to check if two OBBs overlap on a given axis
   overlapOnAxis(obb1, obb2, axis) {
     const project = (obb, axis) => {
       const corners = this.getCorners(obb);
@@ -279,6 +299,7 @@ export class LampCrusher extends Scene {
     return !(min1 > max2 || min2 > max1);
   }
 
+  // Function to get the corners of an OBB
   getCorners(obb) {
     const corners = [];
     const { position, orientation, size } = obb;
@@ -297,6 +318,7 @@ export class LampCrusher extends Scene {
 
     return corners;
   }
+
 
   update_lamp_movement(dt) {
     // Handle jumping
@@ -397,6 +419,7 @@ export class LampCrusher extends Scene {
       this.lamp.transform = mvmt_trans.times(this.lamp.transform);
       // this.original_lamp_y = this.lamp.transform[1][3]; // Add this line if want the lamp to jump infinitely high
 
+      // this.check_collisions()
       // Collision detection
       const lampOBB = this.getOBB(this.lamp);
       for (let i = this.actors.length - 1; i >= 0; i--) {
@@ -406,13 +429,22 @@ export class LampCrusher extends Scene {
           if (this.areOBBsColliding(lampOBB, actorOBB)) {
             console.log("Collision detected with", actor);
             this.actors.splice(i, 1); // Remove the actor from the array
+
+            // Update score
+            this.score += 50;
+            this.updateScoreDisplay();
           }
         }
       }
     }
 
   }
-
+  updateScoreDisplay() {
+    const scoreElement = document.getElementById('score');
+    if (scoreElement) {
+      scoreElement.textContent = `Score: ${this.score}`;
+    }
+  }
   request_pointer_lock() {
     
     this.canvas.requestPointerLock();
