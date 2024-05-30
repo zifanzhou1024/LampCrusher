@@ -17,6 +17,7 @@ export class Actor {
     this.active = true; // Set to false to remove the actor from the scene - not used anymore?
     this.squishing = false; // Flag to indicate if the actor is squishing
     this.squish_timer = 0; // Timer for the squishing animation
+    this.original_height = 1; // Store original height for squishing
   }
 }
 
@@ -449,7 +450,8 @@ export class LampCrusher extends Scene {
               console.log("Collision detected with", actor);
               // this.actors.splice(i, 1); // Remove the actor from the array
               actor.squishing = true; // Set the squishing flag to true
-              actor.squish_timer = 2; // Duration of the squishing animation
+              actor.squish_timer = 3; // Duration of the squishing animation
+                actor.original_height = actor.transform[1][1]; // Store original height for squishing // or [1][3]?
               // Update health
               this.health += 50;
               this.updateHealthDisplay();
@@ -664,7 +666,9 @@ export class LampCrusher extends Scene {
       if (actor.squishing) {
         actor.squish_timer -= dt;
         const squish_factor = Math.max(actor.squish_timer / 0.5, 0);
-        actor.transform = actor.transform.times(Mat4.scale(1, squish_factor, 1));
+        //actor.transform = actor.transform.times(Mat4.scale(1, squish_factor, 1));
+        actor.transform = Mat4.translation(actor.transform[0][3], actor.transform[1][3], actor.transform[2][3])
+            .times(Mat4.scale(1, squish_factor, 1));
         if (actor.squish_timer <= 0) {
           actor.active = false; // Remove the actor after the squishing animation
         }
