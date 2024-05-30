@@ -128,7 +128,6 @@ export class LampCrusher extends Scene {
 
     // Initialize falling letters
     this.falling_letters = [];
-    this.spawn_interval = setInterval(this.spawnFallingLetter.bind(this), 2000);
   }
 
   make_control_panel() {
@@ -178,6 +177,8 @@ export class LampCrusher extends Scene {
     this.key_triggered_button("Start Game", ["Enter"], () => {
       this.game_started = true;
       console.log("Game Started");
+      // Start the spawn interval when the game starts
+      this.spawn_interval = setInterval(this.spawnFallingLetter.bind(this), 2000);
     });
     this.key_triggered_button("Cycle Render Buffers", ["`"], () => {
       if (this.renderer)
