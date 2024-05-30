@@ -15,6 +15,8 @@ export class Actor {
     this.material = null;
     this.bounding_box = null; // Optional bounding box for collision detection
     this.active = true; // Set to false to remove the actor from the scene - not used anymore?
+    this.squishing = false; // Flag to indicate if the actor is squishing
+    this.squish_timer = 0; // Timer for the squishing animation
   }
 }
 
@@ -440,13 +442,14 @@ export class LampCrusher extends Scene {
       const lampOBB = this.getOBB(this.lamp);
       for (let i = this.actors.length - 1; i >= 0; i--) {
         const actor = this.actors[i];
-        if (actor !== this.lamp) {
+        if (actor !== this.lamp && actor.active) {
           const actorOBB = this.getOBB(actor);
           if (this.health > 0 && this.areOBBsColliding(lampOBB, actorOBB)) {
-            if (this.lamp_is_jumping && this.lamp_jump_velocity < 0) {
+            if (this.lamp_is_jumping && this.lamp_jump_velocity < 0 && !actor.squishing) {
               console.log("Collision detected with", actor);
-              this.actors.splice(i, 1); // Remove the actor from the array
-
+              // this.actors.splice(i, 1); // Remove the actor from the array
+              actor.squishing = true; // Set the squishing flag to true
+              actor.squish_timer = 2; // Duration of the squishing animation
               // Update health
               this.health += 50;
               this.updateHealthDisplay();
@@ -455,6 +458,17 @@ export class LampCrusher extends Scene {
               this.preventClipping(lampOBB, actorOBB);
             }
           }
+        }
+      }
+    }
+    // Handle squishing animation
+    for (let actor of this.actors) {
+      if (actor.squishing) {
+        actor.squish_timer -= dt;
+        const squish_factor = Math.max(actor.squish_timer / 0.5, 0);
+        actor.transform = actor.transform.times(Mat4.scale(1, squish_factor, 1));
+        if (actor.squish_timer <= 0) {
+          actor.active = false; // Remove the actor after the squishing animation
         }
       }
     }
@@ -574,7 +588,6 @@ export class LampCrusher extends Scene {
     // Calculate the intensity based on health
     const max_intensity = 7;
     const light_intensity = Math.min((this.health / 50) * max_intensity, max_intensity); // when health <= 50, light_intensity decreases
-
     program_state.directional_light = new DirectionalLight(vec3(-1, -1, 1), vec3(1, 1, 1), light_intensity);
 
     /*
@@ -646,6 +659,18 @@ export class LampCrusher extends Scene {
       Math.PI / 6
     );
 
-    this.renderer.submit(context, program_state, this.actors)
+    // Handle squishing animation
+    for (let actor of this.actors) {
+      if (actor.squishing) {
+        actor.squish_timer -= dt;
+        const squish_factor = Math.max(actor.squish_timer / 0.5, 0);
+        actor.transform = actor.transform.times(Mat4.scale(1, squish_factor, 1));
+        if (actor.squish_timer <= 0) {
+          actor.active = false; // Remove the actor after the squishing animation
+        }
+      }
+    }
+
+    this.renderer.submit(context, program_state, this.actors.filter(actor => actor.active));
   }
 }
