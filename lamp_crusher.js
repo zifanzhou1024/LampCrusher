@@ -449,6 +449,9 @@ export class LampCrusher extends Scene {
     if (this.health > 0) {
       this.health -= 1;
       this.updateHealthDisplay();
+      if (this.health <= 0) {
+        this.displayLoseMessage();
+      }
     }
   }
   updateHealthDisplay() {
@@ -456,6 +459,19 @@ export class LampCrusher extends Scene {
     if (healthElement) {
       healthElement.textContent = `Health: ${this.health}`;
     }
+  }
+  displayLoseMessage() {
+    const loseElement = document.createElement('div');
+    loseElement.id = 'loseMessage';
+    loseElement.style.position = 'absolute';
+    loseElement.style.top = '50%';
+    loseElement.style.left = '50%';
+    loseElement.style.transform = 'translate(-50%, -50%)';
+    loseElement.style.color = 'red';
+    loseElement.style.fontSize = '40px';
+    loseElement.style.fontFamily = 'Arial, sans-serif';
+    loseElement.textContent = "You Lost";
+    document.body.appendChild(loseElement);
   }
   request_pointer_lock() {
     
@@ -510,7 +526,11 @@ export class LampCrusher extends Scene {
       Math.PI / 4, context.width / context.height, 1, 100);
 
     // *** Lights: *** Values of vector or point lights.
-    program_state.directional_light = new DirectionalLight(vec3(-1, -1, 1), vec3(1, 1, 1), 7);
+    // Calculate the intensity based on health
+    const max_intensity = 7;
+    const light_intensity = (this.health / 50) * max_intensity;
+
+    program_state.directional_light = new DirectionalLight(vec3(-1, -1, 1), vec3(1, 1, 1), light_intensity);
 
     /*
       TODO: GAME LOGIC GOES HERE
