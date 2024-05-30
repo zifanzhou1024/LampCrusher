@@ -125,6 +125,10 @@ export class LampCrusher extends Scene {
 
     // Initialize the health decrease timer
     this.health_decrease_interval = setInterval(this.decreaseHealth.bind(this), 100);
+
+    // Initialize falling letters
+    this.falling_letters = [];
+    this.spawn_interval = setInterval(this.spawnFallingLetter.bind(this), 2000);
   }
 
   make_control_panel() {
@@ -453,6 +457,18 @@ export class LampCrusher extends Scene {
         }
       }
     }
+    // Update falling letters
+    for (let i = this.falling_letters.length - 1; i >= 0; i--) {
+      const letter = this.falling_letters[i];
+      letter.transform = letter.transform.times(Mat4.translation(0, -5 * dt, 0));
+      const letterOBB = this.getOBB(letter);
+      const groundOBB = this.getOBB(this.ground);
+
+      if (this.areOBBsColliding(letterOBB, groundOBB)) {
+        this.falling_letters.splice(i, 1);
+      }
+    }
+
   }
   decreaseHealth() {
     if (this.game_started && this.health > 0) {
@@ -518,6 +534,25 @@ export class LampCrusher extends Scene {
     this.lamp.transform[2][3] = lampPosition[2];
   }
 
+  // Function to spawn a falling letter at a random position above the scene
+  spawnFallingLetter() {
+    if(!this.game_started) {
+      return;
+    }
+    const letterMeshes = ["./assets/pixar_p.obj", "./assets/pixar_i.obj", "./assets/pixar_x.obj", "./assets/pixar_a.obj", "./assets/pixar_r.obj"];
+    const randomIndex = Math.floor(Math.random() * letterMeshes.length);
+    const meshPath = letterMeshes[randomIndex];
+
+    const letter = new Actor();
+    letter.mesh = new Mesh(meshPath);
+    letter.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
+    letter.transform = Mat4.translation(Math.random() * 20 - 10, 20, Math.random() * 20 - 10);
+    letter.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter
+
+    this.falling_letters.push(letter);
+    this.actors.push(letter);
+  }
+
 
   display(context, program_state) {
     if (!this.renderer) {
@@ -537,7 +572,7 @@ export class LampCrusher extends Scene {
     // *** Lights: *** Values of vector or point lights.
     // Calculate the intensity based on health
     const max_intensity = 7;
-    const light_intensity = (this.health / 50) * max_intensity; // when health <= 50, light_intensity decreases
+    const light_intensity = Math.min((this.health / 50) * max_intensity, max_intensity); // when health <= 50, light_intensity decreases
 
     program_state.directional_light = new DirectionalLight(vec3(-1, -1, 1), vec3(1, 1, 1), light_intensity);
 
