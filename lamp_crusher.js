@@ -463,17 +463,6 @@ export class LampCrusher extends Scene {
         }
       }
     }
-    // Handle squishing animation
-    for (let actor of this.actors) {
-      if (actor.squishing) {
-        actor.squish_timer -= dt;
-        const squish_factor = Math.max(1 / actor.squish_timer , 0);
-        actor.transform = actor.transform.times(Mat4.scale(1, squish_factor, 1));
-        if (actor.squish_timer <= 0) {
-          actor.active = false; // Remove the actor after the squishing animation
-        }
-      }
-    }
     // Update falling letters
     for (let i = this.falling_letters.length - 1; i >= 0; i--) {
       const letter = this.falling_letters[i];
@@ -482,7 +471,11 @@ export class LampCrusher extends Scene {
       const groundOBB = this.getOBB(this.ground);
 
       if (this.areOBBsColliding(letterOBB, groundOBB)) {
-        this.falling_letters.splice(i, 1);
+        // Check if the letter's y-position is still above the ground
+        const letterPosition = letter.transform.times(vec4(0, 0, 0, 1)).to3();
+        if (letterPosition[1] > this.ground.transform[1][3]) {
+          this.falling_letters.splice(i, 1);
+        }
       }
     }
 
@@ -664,16 +657,29 @@ export class LampCrusher extends Scene {
     // Handle squishing animation
     for (let actor of this.actors) {
       if (actor.squishing) {
+        const total_squish_time = 10;
+        const half_time = 7;
         actor.squish_timer -= dt;
-        const squish_factor = Math.max(1 / actor.squish_timer , 0);
-        //actor.transform = actor.transform.times(Mat4.scale(1, squish_factor, 1));
-        actor.transform = Mat4.translation(actor.transform[0][3], actor.transform[1][3], actor.transform[2][3])
-            .times(Mat4.scale(1, squish_factor, 1));
+
+        if (actor.squish_timer > half_time) {
+          // First half: Squishing
+          const squish_factor = Math.max((actor.squish_timer - half_time) / half_time, 0.05); // Scale down y-axis
+          actor.transform = Mat4.translation(actor.transform[0][3], actor.transform[1][3], actor.transform[2][3])
+              .times(Mat4.scale(1, squish_factor, 1));
+        } else {
+          // Second half: Translation
+          const translate_factor = Math.max(actor.squish_timer / half_time, 0); // Translate down
+          const translate_y = (1 - translate_factor) * actor.original_height;
+          actor.transform = Mat4.translation(actor.transform[0][3], actor.transform[1][3] - translate_y, actor.transform[2][3])
+              .times(Mat4.scale(1, 0.05, 1)); // Ensure it stays squished
+        }
+
         if (actor.squish_timer <= 0) {
           actor.active = false; // Remove the actor after the squishing animation
         }
       }
     }
+
 
     this.renderer.submit(context, program_state, this.actors.filter(actor => actor.active));
   }
