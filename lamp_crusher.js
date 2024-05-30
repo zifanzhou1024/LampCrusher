@@ -14,7 +14,7 @@ export class Actor {
     this.mesh = null;
     this.material = null;
     this.bounding_box = null; // Optional bounding box for collision detection
-    this.active = true; // Set to false to remove the actor from the scene
+    this.active = true; // Set to false to remove the actor from the scene - not used anymore?
   }
 }
 
@@ -119,6 +119,10 @@ export class LampCrusher extends Scene {
     healthElement.style.fontFamily = 'Arial, sans-serif';
     healthElement.textContent = `Health: ${this.health}`;
     document.body.appendChild(healthElement);
+
+    // Initialize game state
+    this.game_started = false;
+
     // Initialize the health decrease timer
     this.health_decrease_interval = setInterval(this.decreaseHealth.bind(this), 100);
   }
@@ -166,6 +170,11 @@ export class LampCrusher extends Scene {
     this.new_line();
     this.new_line();
 
+    // Add a button to start the game
+    this.key_triggered_button("Start Game", ["Enter"], () => {
+      this.game_started = true;
+      console.log("Game Started");
+    });
     this.key_triggered_button("Cycle Render Buffers", ["`"], () => {
       if (this.renderer)
       {
@@ -428,7 +437,7 @@ export class LampCrusher extends Scene {
         const actor = this.actors[i];
         if (actor !== this.lamp) {
           const actorOBB = this.getOBB(actor);
-          if (this.areOBBsColliding(lampOBB, actorOBB)) {
+          if (this.health > 0 && this.areOBBsColliding(lampOBB, actorOBB)) {
             if (this.lamp_is_jumping && this.lamp_jump_velocity < 0) {
               console.log("Collision detected with", actor);
               this.actors.splice(i, 1); // Remove the actor from the array
@@ -446,7 +455,7 @@ export class LampCrusher extends Scene {
     }
   }
   decreaseHealth() {
-    if (this.health > 0) {
+    if (this.game_started && this.health > 0) {
       this.health -= 1;
       this.updateHealthDisplay();
       if (this.health <= 0) {
@@ -528,7 +537,7 @@ export class LampCrusher extends Scene {
     // *** Lights: *** Values of vector or point lights.
     // Calculate the intensity based on health
     const max_intensity = 7;
-    const light_intensity = (this.health / 50) * max_intensity;
+    const light_intensity = (this.health / 50) * max_intensity; // when health <= 50, light_intensity decreases
 
     program_state.directional_light = new DirectionalLight(vec3(-1, -1, 1), vec3(1, 1, 1), light_intensity);
 
