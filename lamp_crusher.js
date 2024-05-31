@@ -52,7 +52,7 @@ export class LampCrusher extends Scene {
     this.letter_p.mesh = new Mesh("./assets/pixar_p.obj");
     this.letter_p.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_p.transform = Mat4.translation(-10, -1, 30);
-    this.letter_p.mesh.bounding_box = vec3(1, 2, 1); // Set an appropriate bounding box for the letter P
+    this.letter_p.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter P
 
     this.letter_i = new Actor();
     this.letter_i.mesh = new Mesh("./assets/pixar_i.obj");
@@ -64,19 +64,19 @@ export class LampCrusher extends Scene {
     this.letter_x.mesh = new Mesh("./assets/pixar_x.obj");
     this.letter_x.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_x.transform = Mat4.translation(-10, -1, 0);
-    this.letter_x.mesh.bounding_box = vec3(1, 2, 1); // Set an appropriate bounding box for the letter X
+    this.letter_x.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter X
 
     this.letter_a = new Actor();
     this.letter_a.mesh = new Mesh("./assets/pixar_a.obj");
     this.letter_a.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_a.transform = Mat4.translation(-10, -1, -15);
-    this.letter_a.mesh.bounding_box = vec3(1, 2, 1); // Set an appropriate bounding box for the letter A
+    this.letter_a.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter A
 
     this.letter_r = new Actor();
     this.letter_r.mesh = new Mesh("./assets/pixar_r.obj");
     this.letter_r.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_r.transform = Mat4.translation(-10, -1, -30);
-    this.letter_r.mesh.bounding_box = vec3(1, 2, 1); // Set an appropriate bounding box for the letter R
+    this.letter_r.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter R
 
     this.actors = [this.lamp, this.ground, this.letter_p, this.letter_i, this.letter_x, this.letter_a, this.letter_r];
 
