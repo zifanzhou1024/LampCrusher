@@ -131,6 +131,11 @@ export class LampCrusher extends Scene {
 
     // Initialize falling letters
     this.falling_letters = [];
+
+    // Add screen shake variables
+    this.shake_duration = 0;
+    this.shake_intensity = 0;
+    this.shake_timer = 0;
   }
 
   make_control_panel() {
@@ -455,6 +460,10 @@ export class LampCrusher extends Scene {
               // Update health
               this.health += 50;
               this.updateHealthDisplay();
+              // Trigger screen shake on collision
+              this.shake_duration = 1; // Duration of the screen shake in seconds
+              this.shake_intensity = 3; // Intensity of the screen shake
+              this.shake_timer = this.shake_duration;
             } else {
               // Prevent XZ movement clipping
               this.preventClipping(lampOBB, actorOBB);
@@ -628,9 +637,19 @@ export class LampCrusher extends Scene {
         const offset = camera_position.minus(target_position).normalized().times(0.1);
         camera_position.add_by(offset);
       }
-  
+
+      // Apply screen shake effect
+      if (this.shake_timer > 0) {
+        const shake_x = (Math.random() - 0.5) * this.shake_intensity;
+        const shake_y = (Math.random() - 0.5) * this.shake_intensity;
+        const shake_z = (Math.random() - 0.5) * this.shake_intensity;
+        camera_position[0] += shake_x;
+        camera_position[1] += shake_y;
+        camera_position[2] += shake_z;
+        this.shake_timer -= dt;
+      }
+
       const camera_transform = Mat4.look_at(camera_position, target_position, up_vector);
-  
       program_state.set_camera(camera_transform);
     } else if (this.intro_view) {
       const camera_position = vec3(40, 0, 0);
