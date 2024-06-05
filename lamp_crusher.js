@@ -88,6 +88,7 @@ export class LampCrusher extends Scene {
     this.third_person_view = false;
     this.intro_view = false;
     this.always_jumping = true; // change to true for intro view
+    this.demo_mode = false; // Add demo_mode state variable
 
     // Initialize the default camera position
     this.initial_camera_location = Mat4.translation(5, -10, -30);
@@ -253,6 +254,15 @@ const startMenuElement = document.createElement('div');
         this.renderer.enable_pcf = !this.renderer.enable_pcf;
       }
     });
+    // Add button to toggle demo mode
+    this.key_triggered_button("Toggle Demo Mode", ["/"], () => {
+      this.demo_mode = !this.demo_mode;
+      if (this.demo_mode) {
+        console.log("Demo mode activated");
+      } else {
+        console.log("Demo mode deactivated");
+      }
+    });
   }
 
 
@@ -276,6 +286,7 @@ const startMenuElement = document.createElement('div');
     this.always_jumping = false; // change to false for intro view
     this.game_started = true;
     this.third_person_view = true;
+    this.demo_mode = false;
     this.spawn_interval = setInterval(this.spawnFallingLetter.bind(this), 2000);
     // this.intro_view = false;
     this.hideStartMenu();
@@ -587,7 +598,7 @@ const startMenuElement = document.createElement('div');
 
   }
   decreaseHealth() {
-    if (this.game_started && this.health > 0) {
+    if (this.game_started && this.health > 0 && !this.demo_mode) {
       const currentTime = performance.now();
       const elapsedTime = this.startTime ? (currentTime - this.startTime) / 1000 : 0;
   
@@ -603,6 +614,7 @@ const startMenuElement = document.createElement('div');
     }
   }
   updateHealthAndScoreDisplay() {
+    if(this.demo_mode) return;
     const healthAndScoreElement = document.getElementById('healthAndScore');
     if (healthAndScoreElement) {
       const currentTime = performance.now();
