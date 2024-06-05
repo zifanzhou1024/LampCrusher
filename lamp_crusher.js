@@ -46,7 +46,7 @@ export class LampCrusher extends Scene {
     this.ground.mesh = new Ground();
     this.ground.material = new Material(new PBRMaterial(), { diffuse: color(0.403, 0.538, 1.768, 1.0), roughness: 1.0, metallic: 0.1 });
     this.ground.transform = Mat4.translation(0, -2.5, 0);
-    this.ground.mesh.bounding_box = vec3(100, 0.1, 100); // Set an appropriate bounding box for the ground
+    this.ground.mesh.bounding_box = vec3(1000, 0.1, 1000); // Set an appropriate bounding box for the ground
 
     this.letter_p = new Actor();
     this.letter_p.mesh = new Mesh("./assets/pixar_p.obj");
@@ -127,7 +127,7 @@ export class LampCrusher extends Scene {
 
     // Initialize game state
     this.game_started = false;
-
+    
     // Initialize the health decrease timer
     this.health_decrease_interval = setInterval(this.decreaseHealth.bind(this), 100);
 
@@ -271,12 +271,13 @@ const startMenuElement = document.createElement('div');
   startGame() {
     this.game_started = true;
       this.third_person_view = true;
+      this.spawn_interval = setInterval(this.spawnFallingLetter.bind(this), 2000);
       // this.intro_view = false;
     this.hideStartMenu();
     this.startTime = performance.now();
       console.log("Game Started");
       // Start the spawn interval when the game starts
-      this.spawn_interval = setInterval(this.spawnFallingLetter.bind(this), 2000);
+      
 
   }
 
@@ -534,7 +535,7 @@ const startMenuElement = document.createElement('div');
               actor.original_height = actor.mesh.bounding_box[1]; // Store the original height of the actor
             
               // Update health and score
-              this.health += 50;
+              this.health += 40;
               this.updateHealthAndScoreDisplay();
               this.score += 10;
             } else {
@@ -641,6 +642,7 @@ const startMenuElement = document.createElement('div');
   loseElement.appendChild(playAgainButtonElement);
   document.body.appendChild(loseElement);
   this.unlock_pointer();
+  clearInterval(this.spawn_interval);
   }
 
   resetGame() {
@@ -650,10 +652,11 @@ const startMenuElement = document.createElement('div');
     this.health = 100;
     this.score = 0;
     this.startTime = null;
+    clearInterval(this.spawn_interval);
     // Clear falling letters
     for (let i = this.actors.length - 1; i >= 0; i--) {
       const actor = this.actors[i];
-      if (actor !== this.lamp && actor !== this.ground && actor !== this.letter_p && actor !== this.letter_i && actor !== this.letter_x && actor !== this.letter_a && actor !== this.letter_r) {
+      if (actor !== this.lamp && actor !== this.ground) {
         this.actors.splice(i, 1);
       }
     }
@@ -666,12 +669,37 @@ const startMenuElement = document.createElement('div');
     this.lamp_is_jumping = false;
     this.lamp_jump_velocity = 0;
   
-    // Reset letter positions
+    this.letter_p = new Actor();
+    this.letter_p.mesh = new Mesh("./assets/pixar_p.obj");
+    this.letter_p.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_p.transform = Mat4.translation(-10, -1, 30);
-    this.letter_i.transform = Mat4.translation(-10, -1.5, 15);
+    this.letter_p.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter P
+
+    this.letter_i = new Actor();
+    this.letter_i.mesh = new Mesh("./assets/pixar_i.obj");
+    this.letter_i.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
+    this.letter_i.transform = Mat4.translation(-10, -1.5, 15); // idk wtf happened with the import honestly
+    this.letter_i.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter I
+
+    this.letter_x = new Actor();
+    this.letter_x.mesh = new Mesh("./assets/pixar_x.obj");
+    this.letter_x.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_x.transform = Mat4.translation(-10, -1, 0);
+    this.letter_x.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter X
+
+    this.letter_a = new Actor();
+    this.letter_a.mesh = new Mesh("./assets/pixar_a.obj");
+    this.letter_a.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_a.transform = Mat4.translation(-10, -1, -15);
+    this.letter_a.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter A
+
+    this.letter_r = new Actor();
+    this.letter_r.mesh = new Mesh("./assets/pixar_r.obj");
+    this.letter_r.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_r.transform = Mat4.translation(-10, -1, -30);
+    this.letter_r.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter R
+
+    this.actors = [this.lamp, this.ground, this.letter_p, this.letter_i, this.letter_x, this.letter_a, this.letter_r];
   
     // Remove the lose message
     const loseElement = document.getElementById('loseMessage');
@@ -685,8 +713,8 @@ const startMenuElement = document.createElement('div');
     // Show the start menu
     this.showStartMenu();
 
-    // this.intro_view = true;
-  // this.third_person_view = false;
+    this.intro_view = true;
+  this.third_person_view = false;
 
   this.unlock_pointer();
   }
@@ -736,10 +764,25 @@ const startMenuElement = document.createElement('div');
     const randomIndex = Math.floor(Math.random() * letterMeshes.length);
     const meshPath = letterMeshes[randomIndex];
 
+    const currentTime = performance.now();
+  const elapsedTime = (currentTime - this.startTime) / 1000; // Convert to seconds
+
+  // Calculate the spawn interval based on the elapsed time
+  const baseInterval = 2000; // Base spawn interval in milliseconds
+  const minimumInterval = 500; // Minimum spawn interval in milliseconds
+  const spawnInterval = Math.max(baseInterval - elapsedTime * 100, minimumInterval);
+
+  // Clear the previous spawn interval
+  clearInterval(this.spawn_interval);
+
+  // Set the new spawn interval
+  this.spawn_interval = setInterval(this.spawnFallingLetter.bind(this), spawnInterval);
+
     const letter = new Actor();
     letter.mesh = new Mesh(meshPath);
     letter.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
-    letter.transform = Mat4.translation(Math.random() * 30 - 15, 20, Math.random() * 30 - 15);
+    const boundingDistance = 100;
+    letter.transform = Mat4.translation(Math.random() * boundingDistance - boundingDistance/2, 20, Math.random() * boundingDistance - boundingDistance/2);
     letter.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter
 
     this.falling_letters.push(letter);
