@@ -38,10 +38,12 @@ export class LampCrusher extends Scene {
     this.camera_distance = 10;
     this.meshes = [new Mesh("./assets/pixar_p.obj"), new Mesh("./assets/pixar_i.obj"), new Mesh("./assets/pixar_x.obj"), new Mesh("./assets/pixar_a.obj"), new Mesh("./assets/pixar_r.obj")]
     this.letter_material =  new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
+
     this.lamp = new Actor();
     this.lamp.mesh = new Mesh("./assets/lamp.obj");
     this.lamp.material = new Material(new PBRMaterial(), { diffuse: hex_color("#ffffff"), roughness: 0.1, metallic: 0.5 });
     this.lamp.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the lamp
+    this.lamp.transform = Mat4.translation(-7.5, 0, 14.5);
 
     this.ground = new Actor();
     this.ground.mesh = new Ground();
@@ -85,14 +87,14 @@ export class LampCrusher extends Scene {
     // Add a state variable to toggle the camera view
     this.third_person_view = false;
     this.intro_view = false;
-    this.always_jumping = false;
+    this.always_jumping = true; // change to true for intro view
 
     // Initialize the default camera position
     this.initial_camera_location = Mat4.translation(5, -10, -30);
 
     // Initialize lamp movement variables
     this.lamp_jump_velocity = 0;
-    this.lamp_is_jumping = false;
+    this.lamp_is_jumping = true; // change to true for intro view
     this.lamp_y_position = 0;
     this.gravity = -0.1;
     this.jump_strength = 1.0;
@@ -271,10 +273,11 @@ const startMenuElement = document.createElement('div');
 
 
   startGame() {
+    this.always_jumping = false; // change to false for intro view
     this.game_started = true;
-      this.third_person_view = true;
-      this.spawn_interval = setInterval(this.spawnFallingLetter.bind(this), 2000);
-      // this.intro_view = false;
+    this.third_person_view = true;
+    this.spawn_interval = setInterval(this.spawnFallingLetter.bind(this), 2000);
+    // this.intro_view = false;
     this.hideStartMenu();
     this.startTime = performance.now();
       console.log("Game Started");
@@ -649,6 +652,7 @@ const startMenuElement = document.createElement('div');
 
   resetGame() {
     // Reset game state
+
     this.game_started = false;
     this.game_over = false;
     this.health = 100;
