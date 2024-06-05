@@ -36,7 +36,8 @@ export class LampCrusher extends Scene {
 
     this.renderer = null;
     this.camera_distance = 10;
-
+    this.meshes = [new Mesh("./assets/pixar_p.obj"), new Mesh("./assets/pixar_i.obj"), new Mesh("./assets/pixar_x.obj"), new Mesh("./assets/pixar_a.obj"), new Mesh("./assets/pixar_r.obj")]
+    
     this.lamp = new Actor();
     this.lamp.mesh = new Mesh("./assets/lamp.obj");
     this.lamp.material = new Material(new PBRMaterial(), { diffuse: hex_color("#ffffff"), roughness: 0.1, metallic: 0.5 });
@@ -49,34 +50,35 @@ export class LampCrusher extends Scene {
     this.ground.mesh.bounding_box = vec3(1000, 0.1, 1000); // Set an appropriate bounding box for the ground
 
     this.letter_p = new Actor();
-    this.letter_p.mesh = new Mesh("./assets/pixar_p.obj");
+    this.letter_p.mesh = this.meshes[0];
     this.letter_p.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_p.transform = Mat4.translation(-10, -1, 30);
     this.letter_p.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter P
 
     this.letter_i = new Actor();
-    this.letter_i.mesh = new Mesh("./assets/pixar_i.obj");
+    this.letter_i.mesh = this.meshes[1];
     this.letter_i.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_i.transform = Mat4.translation(-10, -1.5, 15); // idk wtf happened with the import honestly
     this.letter_i.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter I
 
     this.letter_x = new Actor();
-    this.letter_x.mesh = new Mesh("./assets/pixar_x.obj");
+    this.letter_x.mesh = this.meshes[2];
     this.letter_x.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_x.transform = Mat4.translation(-10, -1, 0);
     this.letter_x.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter X
 
     this.letter_a = new Actor();
-    this.letter_a.mesh = new Mesh("./assets/pixar_a.obj");
+    this.letter_a.mesh = this.meshes[3];
     this.letter_a.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_a.transform = Mat4.translation(-10, -1, -15);
     this.letter_a.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter A
 
     this.letter_r = new Actor();
-    this.letter_r.mesh = new Mesh("./assets/pixar_r.obj");
+    this.letter_r.mesh = this.meshes[4];
     this.letter_r.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_r.transform = Mat4.translation(-10, -1, -30);
     this.letter_r.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter R
+
 
     this.actors = [this.lamp, this.ground, this.letter_p, this.letter_i, this.letter_x, this.letter_a, this.letter_r];
 
@@ -668,33 +670,32 @@ const startMenuElement = document.createElement('div');
     this.lamp_y_position = 0;
     this.lamp_is_jumping = false;
     this.lamp_jump_velocity = 0;
-  
     this.letter_p = new Actor();
-    this.letter_p.mesh = new Mesh("./assets/pixar_p.obj");
+    this.letter_p.mesh = this.meshes[0];
     this.letter_p.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_p.transform = Mat4.translation(-10, -1, 30);
     this.letter_p.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter P
 
     this.letter_i = new Actor();
-    this.letter_i.mesh = new Mesh("./assets/pixar_i.obj");
+    this.letter_i.mesh = this.meshes[1];
     this.letter_i.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_i.transform = Mat4.translation(-10, -1.5, 15); // idk wtf happened with the import honestly
     this.letter_i.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter I
 
     this.letter_x = new Actor();
-    this.letter_x.mesh = new Mesh("./assets/pixar_x.obj");
+    this.letter_x.mesh = this.meshes[2];
     this.letter_x.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_x.transform = Mat4.translation(-10, -1, 0);
     this.letter_x.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter X
 
     this.letter_a = new Actor();
-    this.letter_a.mesh = new Mesh("./assets/pixar_a.obj");
+    this.letter_a.mesh = this.meshes[3];
     this.letter_a.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_a.transform = Mat4.translation(-10, -1, -15);
     this.letter_a.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter A
 
     this.letter_r = new Actor();
-    this.letter_r.mesh = new Mesh("./assets/pixar_r.obj");
+    this.letter_r.mesh = this.meshes[4];
     this.letter_r.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_r.transform = Mat4.translation(-10, -1, -30);
     this.letter_r.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter R
@@ -760,9 +761,7 @@ const startMenuElement = document.createElement('div');
     if (!this.game_started || this.game_over) {
       return;
     }
-    const letterMeshes = ["./assets/pixar_p.obj", "./assets/pixar_i.obj", "./assets/pixar_x.obj", "./assets/pixar_a.obj", "./assets/pixar_r.obj"];
-    const randomIndex = Math.floor(Math.random() * letterMeshes.length);
-    const meshPath = letterMeshes[randomIndex];
+    const randomIndex = Math.floor(Math.random() * 5);
 
     const currentTime = performance.now();
   const elapsedTime = (currentTime - this.startTime) / 1000; // Convert to seconds
@@ -779,7 +778,7 @@ const startMenuElement = document.createElement('div');
   this.spawn_interval = setInterval(this.spawnFallingLetter.bind(this), spawnInterval);
 
     const letter = new Actor();
-    letter.mesh = new Mesh(meshPath);
+    letter.mesh = this.meshes[randomIndex];
     letter.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     const boundingDistance = 100;
     letter.transform = Mat4.translation(Math.random() * boundingDistance - boundingDistance/2, 20, Math.random() * boundingDistance - boundingDistance/2);
