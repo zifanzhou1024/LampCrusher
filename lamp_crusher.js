@@ -40,43 +40,43 @@ export class LampCrusher extends Scene {
     this.lamp = new Actor();
     this.lamp.mesh = new Mesh("./assets/lamp.obj");
     this.lamp.material = new Material(new PBRMaterial(), { diffuse: hex_color("#ffffff"), roughness: 0.1, metallic: 0.5 });
-    this.lamp.mesh.bounding_box = vec3(2, 2, 1); // Set an appropriate bounding box for the lamp
+    this.lamp.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the lamp
 
     this.ground = new Actor();
     this.ground.mesh = new Ground();
     this.ground.material = new Material(new PBRMaterial(), { diffuse: color(0.403, 0.538, 1.768, 1.0), roughness: 1.0, metallic: 0.1 });
     this.ground.transform = Mat4.translation(0, -2.5, 0);
-    this.ground.mesh.bounding_box = vec3(10, 0.1, 10); // Set an appropriate bounding box for the ground
+    this.ground.mesh.bounding_box = vec3(100, 0.1, 100); // Set an appropriate bounding box for the ground
 
     this.letter_p = new Actor();
     this.letter_p.mesh = new Mesh("./assets/pixar_p.obj");
     this.letter_p.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_p.transform = Mat4.translation(-10, -1, 30);
-    this.letter_p.mesh.bounding_box = vec3(2, 4, 2); // Set an appropriate bounding box for the letter P
+    this.letter_p.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter P
 
     this.letter_i = new Actor();
     this.letter_i.mesh = new Mesh("./assets/pixar_i.obj");
     this.letter_i.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_i.transform = Mat4.translation(-10, -1.5, 15); // idk wtf happened with the import honestly
-    this.letter_i.mesh.bounding_box = vec3(2, 2, 2); // Set an appropriate bounding box for the letter I
+    this.letter_i.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter I
 
     this.letter_x = new Actor();
     this.letter_x.mesh = new Mesh("./assets/pixar_x.obj");
     this.letter_x.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_x.transform = Mat4.translation(-10, -1, 0);
-    this.letter_x.mesh.bounding_box = vec3(2, 5, 2); // Set an appropriate bounding box for the letter X
+    this.letter_x.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter X
 
     this.letter_a = new Actor();
     this.letter_a.mesh = new Mesh("./assets/pixar_a.obj");
     this.letter_a.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_a.transform = Mat4.translation(-10, -1, -15);
-    this.letter_a.mesh.bounding_box = vec3(2, 4, 2); // Set an appropriate bounding box for the letter A
+    this.letter_a.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter A
 
     this.letter_r = new Actor();
     this.letter_r.mesh = new Mesh("./assets/pixar_r.obj");
     this.letter_r.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
     this.letter_r.transform = Mat4.translation(-10, -1, -30);
-    this.letter_r.mesh.bounding_box = vec3(2, 5, 2); // Set an appropriate bounding box for the letter R
+    this.letter_r.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter R
 
     this.actors = [this.lamp, this.ground, this.letter_p, this.letter_i, this.letter_x, this.letter_a, this.letter_r];
 
@@ -100,7 +100,7 @@ export class LampCrusher extends Scene {
 
     // Initialize lamp movement direction
     this.lamp_direction = vec3(0, 0, -1); // Forward direction
-    this.lamp_speed = 2; // Movement speed
+    this.lamp_speed = 1; // Movement speed
 
     // Key states for movement
     this.key_states = {};
@@ -111,17 +111,19 @@ export class LampCrusher extends Scene {
     // Initialize health
     this.health = 100;
     // Create a HTML element for displaying the health
-    const healthElement = document.createElement('div');
-    healthElement.id = 'health';
-    healthElement.style.position = 'absolute';
-    healthElement.style.top = '10px';
-    healthElement.style.left = '50%';
-    healthElement.style.transform = 'translateX(-50%)';
-    healthElement.style.color = 'red';
-    healthElement.style.fontSize = '20px';
-    healthElement.style.fontFamily = 'Arial, sans-serif';
-    healthElement.textContent = `Health: ${this.health}`;
-    document.body.appendChild(healthElement);
+  this.score = 0;
+  this.game_over = false;
+  const healthElement = document.createElement('div');
+  healthElement.id = 'healthAndScore';
+  healthElement.style.position = 'absolute';
+  healthElement.style.top = '10px';
+  healthElement.style.left = '50%';
+  healthElement.style.transform = 'translateX(-50%)';
+  healthElement.style.color = 'white';
+  healthElement.style.fontSize = '20px';
+  healthElement.style.fontFamily = 'Arial, sans-serif';
+  healthElement.textContent = `Health: ${this.health} | Score: ${this.score}`;
+  document.body.appendChild(healthElement);
 
     // Initialize game state
     this.game_started = false;
@@ -132,10 +134,52 @@ export class LampCrusher extends Scene {
     // Initialize falling letters
     this.falling_letters = [];
 
-    // Add screen shake variables
-    this.shake_duration = 0;
-    this.shake_intensity = 0;
-    this.shake_timer = 0;
+
+    // score element
+    this.score = 0;
+
+  
+
+// start menu
+this.intro_view = true;
+this.start_menu_visible = true;
+const startMenuElement = document.createElement('div');
+  startMenuElement.id = 'startMenu';
+  startMenuElement.style.position = 'absolute';
+  startMenuElement.style.top = '50%';
+  startMenuElement.style.left = '50%';
+  startMenuElement.style.transform = 'translate(-50%, 0%)';
+  startMenuElement.style.textAlign = 'center';
+  startMenuElement.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+  startMenuElement.style.padding = '20px';
+  startMenuElement.style.borderRadius = '10px';
+  startMenuElement.style.zIndex = '9999';
+
+  const titleElement = document.createElement('h1');
+  titleElement.textContent = 'Lamp Crusher';
+  titleElement.style.color = 'white';
+  titleElement.style.marginBottom = '20px';
+
+  const startButtonElement = document.createElement('button');
+  startButtonElement.textContent = 'Start Game';
+  startButtonElement.style.padding = '10px 20px';
+  startButtonElement.style.fontSize = '18px';
+  startButtonElement.style.backgroundColor = '#4CAF50';
+  startButtonElement.style.color = 'white';
+  startButtonElement.style.border = 'none';
+  startButtonElement.style.borderRadius = '5px';
+  startButtonElement.style.cursor = 'pointer';
+  startButtonElement.addEventListener('click', () => {
+    this.startGame();
+    
+  });
+
+  
+
+  startMenuElement.appendChild(titleElement);
+  startMenuElement.appendChild(startButtonElement);
+  document.body.appendChild(startMenuElement);
+  
   }
 
   make_control_panel() {
@@ -183,10 +227,7 @@ export class LampCrusher extends Scene {
 
     // Add a button to start the game
     this.key_triggered_button("Start Game", ["Enter"], () => {
-      this.game_started = true;
-      console.log("Game Started");
-      // Start the spawn interval when the game starts
-      this.spawn_interval = setInterval(this.spawnFallingLetter.bind(this), 2000);
+      this.startGame();
     });
     this.key_triggered_button("Cycle Render Buffers", ["`"], () => {
       if (this.renderer)
@@ -209,6 +250,37 @@ export class LampCrusher extends Scene {
       }
     });
   }
+
+
+
+  showStartMenu() {
+    const startMenuElement = document.getElementById('startMenu');
+    if (startMenuElement) {
+      startMenuElement.style.display = 'block';
+    }
+  }
+  
+  hideStartMenu() {
+    const startMenuElement = document.getElementById('startMenu');
+    if (startMenuElement) {
+      startMenuElement.style.display = 'none';
+    }
+  }
+
+
+  startGame() {
+    this.game_started = true;
+      this.third_person_view = true;
+      // this.intro_view = false;
+    this.hideStartMenu();
+    this.startTime = performance.now();
+      console.log("Game Started");
+      // Start the spawn interval when the game starts
+      this.spawn_interval = setInterval(this.spawnFallingLetter.bind(this), 2000);
+
+  }
+
+
   handle_mouse_wheel(e) {
     if (this.third_person_view) {
       const delta = e.deltaY < 0 ? -1 : 1;
@@ -234,7 +306,11 @@ export class LampCrusher extends Scene {
       this.camera_rotation_x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.camera_rotation_x));
     }
   }
-
+  unlock_pointer() {
+    if (document.pointerLockElement === this.canvas || document.mozPointerLockElement === this.canvas) {
+      document.exitPointerLock();
+    }
+  }
   handle_pointer_lock_change() {
     // const canvas = document.querySelector("canvas");
     if (this.canvas && (document.pointerLockElement === this.canvas || document.mozPointerLockElement === this.canvas)) {
@@ -368,7 +444,7 @@ export class LampCrusher extends Scene {
     }
 
     // Handle movement
-    if (this.third_person_view) {
+    if (this.third_person_view && !this.game_over) {
       const movement_speed = this.lamp_speed * dt;
       const forward = vec3(
         Math.sin(this.camera_rotation_y),
@@ -453,17 +529,14 @@ export class LampCrusher extends Scene {
           if (this.health > 0 && this.areOBBsColliding(lampOBB, actorOBB)) {
             if (this.lamp_is_jumping && this.lamp_jump_velocity < 0 && !actor.squishing) {
               console.log("Collision detected with", actor);
-              // this.actors.splice(i, 1); // Remove the actor from the array
-              actor.squishing = true; // Set the squishing flag to true
-              actor.squish_timer = 10; // Duration of the squishing animation
-                actor.original_height = actor.transform[1][1]; // Store original height for squishing // or [1][3]?
-              // Update health
+              actor.squishing = true;
+              actor.squish_timer = 5;
+              actor.original_height = actor.mesh.bounding_box[1]; // Store the original height of the actor
+            
+              // Update health and score
               this.health += 50;
-              this.updateHealthDisplay();
-              // Trigger screen shake on collision
-              this.shake_duration = 1; // Duration of the screen shake in seconds
-              this.shake_intensity = 3; // Intensity of the screen shake
-              this.shake_timer = this.shake_duration;
+              this.updateHealthAndScoreDisplay();
+              this.score += 10;
             } else {
               // Prevent XZ movement clipping
               this.preventClipping(lampOBB, actorOBB);
@@ -472,54 +545,150 @@ export class LampCrusher extends Scene {
         }
       }
     }
+    // Handle squishing animation
+    for (let actor of this.actors) {
+      if (actor.squishing) {
+        actor.squish_timer -= dt;
+        const squish_factor = Math.max(actor.squish_timer / 0.5, 0);
+        actor.transform = Mat4.translation(actor.transform[0][3], actor.original_y - (1 - squish_factor) * 0.5, actor.transform[2][3])
+          .times(Mat4.scale(1, squish_factor, 1));
+        if (actor.squish_timer <= 0) {
+          actor.active = false;
+        }
+      }
+    }
     // Update falling letters
     for (let i = this.falling_letters.length - 1; i >= 0; i--) {
       const letter = this.falling_letters[i];
-      letter.transform = letter.transform.times(Mat4.translation(0, -5 * dt, 0));
+      letter.transform = letter.transform.times(Mat4.translation(0, -1 * dt, 0));
       const letterOBB = this.getOBB(letter);
       const groundOBB = this.getOBB(this.ground);
 
       if (this.areOBBsColliding(letterOBB, groundOBB)) {
-        // Check if the letter's y-position is still above the ground
-        const letterPosition = letter.transform.times(vec4(0, 0, 0, 1)).to3();
-        if (letterPosition[1] > this.ground.transform[1][3]) {
-          this.falling_letters.splice(i, 1);
+        if (letter.mesh.filename === "./assets/pixar_i.obj") {
+          letter.transform[1][3] = -1.5; // Set y-coordinate to -1.5 for the letter "I"
+        } else {
+          letter.transform[1][3] = -1; // Set y-coordinate to -1 for other letters
         }
+        this.falling_letters.splice(i, 1);
       }
     }
 
   }
   decreaseHealth() {
     if (this.game_started && this.health > 0) {
-      this.health -= 1;
-      this.updateHealthDisplay();
+      const currentTime = performance.now();
+      const elapsedTime = this.startTime ? (currentTime - this.startTime) / 1000 : 0;
+  
+      // Calculate the health decrease rate based on elapsed time
+      const healthDecreaseRate = 1 + Math.floor(elapsedTime / 10);
+  
+      this.health -= healthDecreaseRate;
+      this.updateHealthAndScoreDisplay();
       if (this.health <= 0) {
+        this.game_over = true;
         this.displayLoseMessage();
       }
     }
   }
-  updateHealthDisplay() {
-    const healthElement = document.getElementById('health');
-    if (healthElement) {
-      healthElement.textContent = `Health: ${this.health}`;
+  updateHealthAndScoreDisplay() {
+    const healthAndScoreElement = document.getElementById('healthAndScore');
+    if (healthAndScoreElement) {
+      const currentTime = performance.now();
+      const elapsedTime = this.startTime ? (currentTime - this.startTime) / 1000 : 0;
+      const formattedTime = elapsedTime.toFixed(1);
+  
+      healthAndScoreElement.textContent = `Health: ${this.health} | Score: ${this.score} | Time: ${formattedTime}s`;
     }
   }
   displayLoseMessage() {
     const loseElement = document.createElement('div');
-    loseElement.id = 'loseMessage';
-    loseElement.style.position = 'absolute';
-    loseElement.style.top = '50%';
-    loseElement.style.left = '50%';
-    loseElement.style.transform = 'translate(-50%, -50%)';
-    loseElement.style.color = 'red';
-    loseElement.style.fontSize = '40px';
-    loseElement.style.fontFamily = 'Arial, sans-serif';
-    loseElement.textContent = "You Lost";
-    document.body.appendChild(loseElement);
+  loseElement.id = 'loseMessage';
+  loseElement.style.position = 'absolute';
+  loseElement.style.top = '50%';
+  loseElement.style.left = '50%';
+  loseElement.style.transform = 'translate(-50%, -50%)';
+  loseElement.style.textAlign = 'center';
+  loseElement.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+  loseElement.style.padding = '20px';
+  loseElement.style.borderRadius = '10px';
+  loseElement.style.zIndex = '9999';
+
+  const loseTextElement = document.createElement('h1');
+  loseTextElement.textContent = 'Game Over';
+  loseTextElement.style.color = 'white';
+  loseTextElement.style.marginBottom = '20px';
+
+  const playAgainButtonElement = document.createElement('button');
+  playAgainButtonElement.textContent = 'Play Again';
+  playAgainButtonElement.style.padding = '10px 20px';
+  playAgainButtonElement.style.fontSize = '18px';
+  playAgainButtonElement.style.backgroundColor = '#4CAF50';
+  playAgainButtonElement.style.color = 'white';
+  playAgainButtonElement.style.border = 'none';
+  playAgainButtonElement.style.borderRadius = '5px';
+  playAgainButtonElement.style.cursor = 'pointer';
+  playAgainButtonElement.addEventListener('click', () => {
+    this.resetGame();
+  });
+
+  loseElement.appendChild(loseTextElement);
+  loseElement.appendChild(playAgainButtonElement);
+  document.body.appendChild(loseElement);
+  this.unlock_pointer();
+  }
+
+  resetGame() {
+    // Reset game state
+    this.game_started = false;
+    this.game_over = false;
+    this.health = 100;
+    this.score = 0;
+    this.startTime = null;
+    // Clear falling letters
+    for (let i = this.actors.length - 1; i >= 0; i--) {
+      const actor = this.actors[i];
+      if (actor !== this.lamp && actor !== this.ground && actor !== this.letter_p && actor !== this.letter_i && actor !== this.letter_x && actor !== this.letter_a && actor !== this.letter_r) {
+        this.actors.splice(i, 1);
+      }
+    }
+    this.falling_letters = [];
+  
+    // Reset lamp position
+    this.lamp.transform = Mat4.identity();
+    this.original_lamp_y = 0;
+    this.lamp_y_position = 0;
+    this.lamp_is_jumping = false;
+    this.lamp_jump_velocity = 0;
+  
+    // Reset letter positions
+    this.letter_p.transform = Mat4.translation(-10, -1, 30);
+    this.letter_i.transform = Mat4.translation(-10, -1.5, 15);
+    this.letter_x.transform = Mat4.translation(-10, -1, 0);
+    this.letter_a.transform = Mat4.translation(-10, -1, -15);
+    this.letter_r.transform = Mat4.translation(-10, -1, -30);
+  
+    // Remove the lose message
+    const loseElement = document.getElementById('loseMessage');
+    if (loseElement) {
+      loseElement.remove();
+    }
+  
+    // Update the health and score display
+    this.updateHealthAndScoreDisplay();
+  
+    // Show the start menu
+    this.showStartMenu();
+
+    // this.intro_view = true;
+  // this.third_person_view = false;
+
+  this.unlock_pointer();
   }
   request_pointer_lock() {
-    
-    this.canvas.requestPointerLock();
+    if (this.game_started && !this.game_over) {
+      this.canvas.requestPointerLock();
+    }
   }
 
   // Function to prevent clipping between the lamp and another actor
@@ -552,9 +721,10 @@ export class LampCrusher extends Scene {
     }
   }
 
+
   // Function to spawn a falling letter at a random position above the scene
   spawnFallingLetter() {
-    if(!this.game_started) {
+    if (!this.game_started || this.game_over) {
       return;
     }
     const letterMeshes = ["./assets/pixar_p.obj", "./assets/pixar_i.obj", "./assets/pixar_x.obj", "./assets/pixar_a.obj", "./assets/pixar_r.obj"];
@@ -564,8 +734,8 @@ export class LampCrusher extends Scene {
     const letter = new Actor();
     letter.mesh = new Mesh(meshPath);
     letter.material = new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
-    letter.transform = Mat4.translation(Math.random() * 20 - 10, 20, Math.random() * 20 - 10);
-    letter.mesh.bounding_box = vec3(1, 2, 1); // Set an appropriate bounding box for the letter
+    letter.transform = Mat4.translation(Math.random() * 30 - 15, 20, Math.random() * 30 - 15);
+    letter.mesh.bounding_box = vec3(1, 1, 1); // Set an appropriate bounding box for the letter
 
     this.falling_letters.push(letter);
     this.actors.push(letter);
@@ -578,6 +748,11 @@ export class LampCrusher extends Scene {
       this.renderer = new Renderer(gl);
     }
     this.canvas = context.canvas
+
+    if (!this.game_started) {
+      this.showStartMenu();
+      // return;
+    }
     if (!context.scratchpad.controls) {
       this.children.push(context.scratchpad.controls = new defs.Movement_Controls());
       // Define the global camera and projection matrices, which are stored in program_state.
@@ -590,7 +765,7 @@ export class LampCrusher extends Scene {
     // *** Lights: *** Values of vector or point lights.
     // Calculate the intensity based on health
     const max_intensity = 7;
-    const light_intensity = Math.min((this.health / 50) * max_intensity, max_intensity); // when health <= 50, light_intensity decreases
+    const light_intensity = Math.min((this.health / 150) ** 3 * max_intensity, max_intensity); // when health <= 50, light_intensity decreases
     program_state.directional_light = new DirectionalLight(vec3(-1, -1, 1), vec3(1, 1, 1), light_intensity);
 
     /*
@@ -636,19 +811,9 @@ export class LampCrusher extends Scene {
         const offset = camera_position.minus(target_position).normalized().times(0.1);
         camera_position.add_by(offset);
       }
-
-      // Apply screen shake effect
-      if (this.shake_timer > 0) {
-        const shake_x = (Math.random() - 0.5) * this.shake_intensity;
-        const shake_y = (Math.random() - 0.5) * this.shake_intensity;
-        const shake_z = (Math.random() - 0.5) * this.shake_intensity;
-        camera_position[0] += shake_x;
-        camera_position[1] += shake_y;
-        camera_position[2] += shake_z;
-        this.shake_timer -= dt;
-      }
-
+  
       const camera_transform = Mat4.look_at(camera_position, target_position, up_vector);
+  
       program_state.set_camera(camera_transform);
     } else if (this.intro_view) {
       const camera_position = vec3(40, 0, 0);
@@ -675,29 +840,16 @@ export class LampCrusher extends Scene {
     // Handle squishing animation
     for (let actor of this.actors) {
       if (actor.squishing) {
-        const total_squish_time = 10;
-        const half_time = 7;
         actor.squish_timer -= dt;
-
-        if (actor.squish_timer > half_time) {
-          // First half: Squishing
-          const squish_factor = Math.max((actor.squish_timer - half_time) / half_time, 0.05); // Scale down y-axis
-          actor.transform = Mat4.translation(actor.transform[0][3], actor.transform[1][3], actor.transform[2][3])
-              .times(Mat4.scale(1, squish_factor, 1));
-        } else {
-          // Second half: Translation
-          const translate_factor = Math.max(actor.squish_timer / half_time, 0); // Translate down
-          const translate_y = (1 - translate_factor) * actor.original_height;
-          actor.transform = Mat4.translation(actor.transform[0][3], actor.transform[1][3] - translate_y, actor.transform[2][3])
-              .times(Mat4.scale(1, 0.05, 1)); // Ensure it stays squished
-        }
-
+        const squish_factor = Math.max(actor.squish_timer / 0.5, 0);
+        const original_y = actor.transform[1][3];
+        actor.transform = Mat4.translation(actor.transform[0][3], original_y - (1 - squish_factor) * actor.original_height, actor.transform[2][3])
+          .times(Mat4.scale(1, squish_factor, 1));
         if (actor.squish_timer <= 0) {
-          actor.active = false; // Remove the actor after the squishing animation
+          actor.active = false;
         }
       }
     }
-
 
     this.renderer.submit(context, program_state, this.actors.filter(actor => actor.active));
   }
