@@ -530,7 +530,7 @@ const startMenuElement = document.createElement('div');
             if (this.lamp_is_jumping && this.lamp_jump_velocity < 0 && !actor.squishing) {
               console.log("Collision detected with", actor);
               actor.squishing = true;
-              actor.squish_timer = 5;
+              actor.squish_timer = 10;
               actor.original_height = actor.mesh.bounding_box[1]; // Store the original height of the actor
             
               // Update health and score
@@ -548,12 +548,17 @@ const startMenuElement = document.createElement('div');
     // Handle squishing animation
     for (let actor of this.actors) {
       if (actor.squishing) {
+        const total_squish_time = 10;
         actor.squish_timer -= dt;
-        const squish_factor = Math.max(actor.squish_timer / 0.5, 0);
-        actor.transform = Mat4.translation(actor.transform[0][3], actor.original_y - (1 - squish_factor) * 0.5, actor.transform[2][3])
-          .times(Mat4.scale(1, squish_factor, 1));
+    
+        const squish_factor = Math.max(actor.squish_timer / total_squish_time, 0.05); // Scale down y-axis
+        const translate_y = (1 - squish_factor) * actor.original_height;
+    
+        actor.transform = Mat4.translation(actor.transform[0][3], actor.transform[1][3] - translate_y, actor.transform[2][3])
+            .times(Mat4.scale(1, squish_factor, 1));
+    
         if (actor.squish_timer <= 0) {
-          actor.active = false;
+          actor.active = false; // Remove the actor after the squishing animation
         }
       }
     }
@@ -840,13 +845,25 @@ const startMenuElement = document.createElement('div');
     // Handle squishing animation
     for (let actor of this.actors) {
       if (actor.squishing) {
+        const total_squish_time = 10;
+        const half_time = 7;
         actor.squish_timer -= dt;
-        const squish_factor = Math.max(actor.squish_timer / 0.5, 0);
-        const original_y = actor.transform[1][3];
-        actor.transform = Mat4.translation(actor.transform[0][3], original_y - (1 - squish_factor) * actor.original_height, actor.transform[2][3])
-          .times(Mat4.scale(1, squish_factor, 1));
+
+        if (actor.squish_timer > half_time) {
+          // First half: Squishing
+          const squish_factor = Math.max((actor.squish_timer - half_time) / half_time, 0.05); // Scale down y-axis
+          actor.transform = Mat4.translation(actor.transform[0][3], actor.transform[1][3], actor.transform[2][3])
+              .times(Mat4.scale(1, squish_factor, 1));
+        } else {
+          // Second half: Translation
+          const translate_factor = Math.max(actor.squish_timer / half_time, 0); // Translate down
+          const translate_y = (1 - translate_factor) * actor.original_height;
+          actor.transform = Mat4.translation(actor.transform[0][3], actor.transform[1][3] - translate_y, actor.transform[2][3])
+              .times(Mat4.scale(1, 0.05, 1)); // Ensure it stays squished
+        }
+
         if (actor.squish_timer <= 0) {
-          actor.active = false;
+          actor.active = false; // Remove the actor after the squishing animation
         }
       }
     }
