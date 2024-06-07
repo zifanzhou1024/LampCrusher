@@ -675,7 +675,8 @@ export class StandardBrdf extends Shader
     const O = vec4(0, 0, 0, 1);
     const camera_center = gpu_state.camera_transform.times(O).to3();
     gl.uniform3fv( gpu_addresses.g_WSCameraPosition, camera_center );
-    gl.uniform3fv( gpu_addresses.g_SkyColor, vec3( 0.403, 0.538, 1.768 ) );
+    const sky_brightness = gpu_state.directional_light ? gpu_state.directional_light.luminance / 7.0 : 1.0;
+    gl.uniform3fv( gpu_addresses.g_SkyColor, vec3( 0.403, 0.538, 1.768 ).times( sky_brightness ) );
 
     gl.uniform1i( gpu_addresses.g_EnablePCF, gpu_state.enable_pcf ? 1 : 0 );
 

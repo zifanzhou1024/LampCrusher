@@ -681,10 +681,12 @@ const startMenuElement = document.createElement('div');
     this.falling_letters = [];
   
     // Reset lamp position
-    this.lamp.transform = Mat4.identity();
+    this.lamp.transform = Mat4.translation(-7.5, 0, 14.5);
     this.original_lamp_y = 0;
     this.lamp_y_position = 0;
-    this.lamp_is_jumping = false;
+    this.lamp_is_jumping = true;
+
+    this.always_jumping = true; // change to true for intro view
     this.lamp_jump_velocity = 0;
     this.letter_p = new Actor();
     this.letter_p.mesh = this.meshes[0];
@@ -828,7 +830,7 @@ const startMenuElement = document.createElement('div');
     // *** Lights: *** Values of vector or point lights.
     // Calculate the intensity based on health
     const max_intensity = 7;
-    const light_intensity = Math.min((this.health / 150) ** 3 * max_intensity, max_intensity); // when health <= 50, light_intensity decreases
+    const light_intensity = this.game_started ? Math.min((this.health / 150) ** 3 * max_intensity, max_intensity) : max_intensity; // when health <= 50, light_intensity decreases
     program_state.directional_light = new DirectionalLight(vec3(-1, -1, 1), vec3(1, 1, 1), light_intensity);
 
     /*
