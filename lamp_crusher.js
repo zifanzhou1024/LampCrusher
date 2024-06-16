@@ -26,6 +26,7 @@ export class LampCrusher extends Scene {
     super();
     // this.context = context;
     // this.canvas = context.canvas;
+    this.widget_options = {make_controls: true, make_code_nav: false, show_explanation: false};
 
     this.materials = {
       plastic: new Material(new defs.Phong_Shader(),
@@ -35,7 +36,7 @@ export class LampCrusher extends Scene {
     };
 
     this.renderer = null;
-    this.camera_distance = 10;
+    this.camera_distance = 20;
     this.meshes = [new Mesh("./assets/pixar_p.obj"), new Mesh("./assets/pixar_i.obj"), new Mesh("./assets/pixar_x.obj"), new Mesh("./assets/pixar_a.obj"), new Mesh("./assets/pixar_r.obj")]
     this.letter_material =  new Material(new PBRMaterial(), { diffuse: hex_color("#000000"), roughness: 1.0, metallic: 0.1 });
 
@@ -129,6 +130,17 @@ export class LampCrusher extends Scene {
   healthElement.style.fontFamily = 'Arial, sans-serif';
   healthElement.textContent = `Health: ${this.health} | Score: ${this.score}`;
   document.body.appendChild(healthElement);
+
+    this.frametimeElement = document.createElement('div');
+    this.frametimeElement.id = 'frametime';
+    this.frametimeElement.style.position = 'absolute';
+    this.frametimeElement.style.top = '10px';
+    this.frametimeElement.style.left = '2%';
+    this.frametimeElement.style.color = 'white';
+    this.frametimeElement.style.fontSize = '20px';
+    this.frametimeElement.style.fontFamily = 'Arial, sans-serif';
+    this.frametimeElement.textContent = `0ms`;
+    document.body.appendChild(this.frametimeElement);
 
     // Initialize game state
     this.game_started = false;
@@ -809,10 +821,13 @@ const startMenuElement = document.createElement('div');
 
   display(context, program_state) {
     if (!this.renderer) {
+      context.set_size([window.innerWidth, window.innerHeight]);
       const gl = context.context;
       this.renderer = new Renderer(gl);
     }
     this.canvas = context.canvas
+
+    this.frametimeElement.textContent = `${program_state.animation_delta_time.toFixed(2)}ms`;
 
     if (!this.game_started) {
       this.showStartMenu();
